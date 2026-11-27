@@ -30,6 +30,7 @@
 | 单项删除 | ⏳ 待验证（未锁定时每项右侧有 ×） |
 | 应用图标 / 通知栏图标 | ⏳ 待验证（自适应矢量图标，无位图） |
 | 导入备份 | ⏳ 待验证（POST /api/import，整包替换） |
+| 新建表头不再是 null | ⏳ 待验证（不再依赖 optString 处理 JSON null） |
 | 电脑端能访问 | 未验证 |
 | 熄屏后 Wi-Fi 仍在线 | 未验证 |
 | 锁规则在后端真的拒绝（409） | 未跑过 curl 冒烟 |
@@ -169,6 +170,11 @@ tools/smoke.sh             真机接口冒烟（curl）
   服务端又不需要它；残留在 keep-alive 连接里的字节会被当成下一个请求的起始行，
   NanoHTTPD 自己判 400 并回一个非 JSON 响应体（前端只能看到 `HTTP_400`，而我们的日志里什么都没有）。
   两端都做了防备：前端不发、服务端在 `serve()` 里无条件把 body 读完。
+- **不依赖 `optString` 处理 JSON null**。Android 的 `org.json` 遇到 `JSONObject.NULL` 时
+  走 `String.valueOf(NULL)`，得到的是字符串 `"null"`，不是空串。所以
+  `optString("name").takeIf { it.isNotBlank() }` 会把 null 当成合法的名字，
+  表头就真的显示成 `null`——接口返回 200、数据也写进去了，只有盯界面才发现。
+  服务端统一用 `text()` 取可选字段（缺失或 null 一律返回 null），前端也不发 `null`。
 - **`locked` 是派生值**，不是独立真相。它由 `status != active && !allowEditCompleted` 算出，
   只允许 `ChecklistRepository.persisted()` 一个函数写那三列。
 - **锁定校验在 Repository 里**，不在前端禁用。前端只拿到 `locked` 这个结果。

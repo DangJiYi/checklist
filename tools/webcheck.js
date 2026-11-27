@@ -318,6 +318,44 @@ setImmediate(async function () {
     check('错误上报正常', false, e.message);
   }
 
+  console.log('\n\x1b[1m新建表的载荷不应带 null 字段\x1b[0m');
+  try {
+    var sent2 = [];
+    var origFetch3 = global.fetch;
+    global.fetch = function (url, init) {
+      if (url === '/api/instances' && init && init.method === 'POST') {
+        sent2.push(init.body || '');
+      }
+      return origFetch3(url, init);
+    };
+
+    // “再来一张”：这是用户报的那个场景
+    click('new');
+    await new Promise(function (r) { realSetTimeout(r, 20); });
+    var pick = elements.app.innerHTML;
+    if (includes(pick, 'data-act="pick-template"')) {
+      click('pick-template', { 'data-id': 10 });
+      await new Promise(function (r) { realSetTimeout(r, 20); });
+    }
+
+    // 空白表
+    click('new');
+    await new Promise(function (r) { realSetTimeout(r, 20); });
+    if (includes(elements.app.innerHTML, 'data-act="pick-blank"')) {
+      click('pick-blank');
+      await new Promise(function (r) { realSetTimeout(r, 20); });
+    }
+
+    global.fetch = origFetch3;
+
+    check('发出过建表请求', sent2.length > 0, '实际捕获 ' + sent2.length + ' 次');
+    var withNull = sent2.filter(function (b) { return b.indexOf('"name":null') !== -1; });
+    check('建表载荷不含 "name":null', withNull.length === 0,
+      '捕获到带 null 的载荷：' + (withNull[0] || ''));
+  } catch (e) {
+    check('新建表载荷检查', false, e.message);
+  }
+
   console.log('\n\x1b[1m设置页\x1b[0m');
   try {
     hash = '#/settings';

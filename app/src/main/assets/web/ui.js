@@ -924,7 +924,10 @@
 
       case 'pick-template': createInstance({ templateId: id }); break;
 
-      case 'pick-blank': createInstance({ templateId: null, name: null }); break;
+      // 不传 name：服务端会回退到模板名（空白表则用默认名）。
+      // 以前这里传的是 name: null，而 Android 的 org.json 把 JSON null 读成字符串 "null"，
+      // 于是表头真的显示成 “null”。服务端已修，但源头也不应该发 null。
+      case 'pick-blank': createInstance({ templateId: null }); break;
 
       case 'toggle': doToggle(id); break;
 
@@ -1015,7 +1018,7 @@
       case 'next-same': {
         var a = S.after;
         closeModal();
-        if (a && a.templateId) createInstance({ templateId: a.templateId, name: null });
+        if (a && a.templateId) createInstance({ templateId: a.templateId });
         break;
       }
 
@@ -1023,7 +1026,7 @@
 
       case 'next-template': createInstance({ templateId: id }); break;
 
-      case 'next-blank': createInstance({ templateId: null, name: null }); break;
+      case 'next-blank': createInstance({ templateId: null }); break;
 
       default: break;
     }

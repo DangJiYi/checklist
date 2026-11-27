@@ -115,13 +115,13 @@ class WebServer(
                 seg.size == 2 && method == NanoHTTPD.Method.POST -> {
                     val o = parseJson(body)
                     return reply(
-                        repo.createTemplate(o.optString("name"), stringList(o.optJSONArray("items")))
+                        repo.createTemplate(text(o, "name") ?: "", stringList(o.optJSONArray("items")))
                     ) { templateJson(it) }
                 }
                 seg.size == 3 && id != null && method == NanoHTTPD.Method.PUT -> {
                     val o = parseJson(body)
                     return reply(
-                        repo.updateTemplate(id, o.optString("name"), stringList(o.optJSONArray("items")))
+                        repo.updateTemplate(id, text(o, "name") ?: "", stringList(o.optJSONArray("items")))
                     ) { templateJson(it) }
                 }
                 seg.size == 3 && id != null && method == NanoHTTPD.Method.DELETE ->
@@ -139,9 +139,9 @@ class WebServer(
                     return reply(
                         repo.createInstance(
                             templateId = templateId,
-                            name = o.optString("name").takeIf { it.isNotBlank() },
-                            localDate = o.optString("localDate").takeIf { it.isNotBlank() },
-                            clientToken = o.optString("clientToken").takeIf { it.isNotBlank() }
+                            name = text(o, "name"),
+                            localDate = text(o, "localDate"),
+                            clientToken = text(o, "clientToken")
                         )
                     ) { instanceJson(it, true) }
                 }
@@ -170,7 +170,7 @@ class WebServer(
 
                 seg.size == 4 && id != null && arg == "items" && method == NanoHTTPD.Method.POST -> {
                     val o = parseJson(body)
-                    return reply(repo.addItem(id, o.optString("name"))) { instanceJson(it, true) }
+                    return reply(repo.addItem(id, text(o, "name") ?: "")) { instanceJson(it, true) }
                 }
             }
 
@@ -196,7 +196,8 @@ class WebServer(
                     val keys = o.keys()
                     while (keys.hasNext()) {
                         val k = keys.next()
-                        patch[k] = o.optString(k)
+                        // 值为 null 就不当作一次修改，避免把字符串 "null" 存进设置
+                        text(o, k)?.let { patch[k] = it }
                     }
                     return reply(repo.updateSettings(patch)) { settingsJson(it) }
                 }
@@ -234,6 +235,23 @@ class WebServer(
         }
 
         return json(St.NOT_FOUND, errorBody("NOT_FOUND", "接口不存在：${session.method} $path"))
+    }
+
+    /**
+     * 读一个可选的字符串字段。字段缺失、或值为 JSON null 时返回 null。
+     *
+     * 为什么不直接用 optString：Android 的 org.json 在遇到 JSONObject.NULL
+     * 时会走 String.valueOf(NULL)，得到一个字符串 "null"——而不是空串。
+     * 于是 `optString("name").takeIf { it.isNotBlank() }` 会把 null 当成真名字，
+     * 表头就真的显示成 “null”。这个坑很隐形：数据写进库了、接口返回 200，
+     * 只有盯界面才发现。
+     */
+    private fun text(o: JSONObject, key: String): String? {
+        if (!o.has(key)) return null
+        val v = o.opt(key)
+        if (v == null || v === JSONObject.NULL) return null
+        val s = v.toString().trim()
+        return s.ifEmpty { null }
     }
 
     // ------------------------------------------------------------ 载荷
@@ -379,14 +397,14 @@ class WebServer(
             if (items != null) {
                 for (j in 0 until items.length()) {
                     val it = items.optJSONObject(j) ?: continue
-                    val n = it.optString("name")
-                    if (n.isNotBlank()) names.add(n)
+                    val n = text(it, "name")
+                    if (n != null) names.add(n)
                 }
             }
             out.add(
                 ImportTemplate(
                     id = o.optLong("id").takeIf { it > 0 },
-                    name = o.optString("name"),
+                    name = text(o, "name") ?: "",
                     createdAt = o.optLong("createdAt").takeIf { it > 0 } ?: System.currentTimeMillis(),
                     items = names
                 )
@@ -405,18 +423,18 @@ class WebServer(
             if (arr2 != null) {
                 for (j in 0 until arr2.length()) {
                     val it = arr2.optJSONObject(j) ?: continue
-                    val n = it.optString("name")
-                    if (n.isNotBlank()) items.add(ImportItem(n, it.optBoolean("checked", false)))
+                    val n = text(it, "name")
+                    if (n != null) items.add(ImportItem(n, it.optBoolean("checked", false)))
                 }
             }
             val completedAt = o.optLong("completedAt").takeIf { it > 0 }
-            val status = Status.of(o.optString("status"))
+            val status = Status.of(text(o, "status") ?: "")
             out.add(
                 ImportInstance(
                     id = o.optLong("id").takeIf { it > 0 },
                     templateId = o.optLong("templateId").takeIf { it > 0 },
-                    name = o.optString("name"),
-                    localDate = o.optString("localDate"),
+                    name = text(o, "name") ?: "",
+                    localDate = text(o, "localDate") ?: "",
                     createdAt = o.optLong("createdAt").takeIf { it > 0 }
                         ?: (completedAt ?: System.currentTimeMillis()),
                     completedAt = completedAt,
@@ -606,7 +624,14 @@ class WebServer(
     private fun stringList(arr: JSONArray?): List<String> {
         if (arr == null) return emptyList()
         val out = ArrayList<String>(arr.length())
-        for (i in 0 until arr.length()) out.add(arr.optString(i))
+        for (i in 0 until arr.length()) {
+            // 同样不能直接 optString：数组里写 null 会得到字符串 "null"，
+            // 于是模板里真的多出一条名叫 null 的检查项。
+            val v = arr.opt(i)
+            if (v == null || v === JSONObject.NULL) continue
+            val s = v.toString().trim()
+            if (s.isNotEmpty()) out.add(s)
+        }
         return out
     }
 }
