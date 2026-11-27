@@ -50,10 +50,26 @@ class WebServer(
      */
     private val currentPath = ThreadLocal<String>()
 
+    /** 本次请求的请求体。在 serve() 里就已经读完，见下面的注释。 */
+    private val bodyCache = ThreadLocal<String>()
+
     override fun serve(session: NanoHTTPD.IHTTPSession): Resp {
         val path = (session.uri ?: "/").substringBefore('?')
         currentPath.set("${session.method} $path")
+
         return try {
+            // 不管这个接口用不用得上请求体，先把 body 读完。
+            //
+            // 曾经是用 by lazy 按需读：/api/items/{id}/toggle 这类接口不需要 body，
+            // 于是前端发来的 "{}" 就一直留在 socket 里没人消费。
+            // 在 keep-alive 连接上，残余字节会被当成下一个请求的起始行，
+            // NanoHTTPD 自己判 400 并回一个非 JSON 响应体——
+            // 前端只能拿到 HTTP_400，而我们的 app.log 里什么都没有，因为那 400 不是我们发的。
+            //
+            // 必须写在 try 里面：readBody 会因超大请求体抛 BadRequest，
+            // 抛到外面就绕过了下面的处理器，客户端又只能收到一个非 JSON 的响应。
+            bodyCache.set(readBody(session))
+
             when {
                 // 健康检查不包 data 层：MainActivity 的探测直接读顶层 app 字段，
                 // 少一层解包就少一处两边对不上的可能
@@ -70,6 +86,10 @@ class WebServer(
         } catch (e: Exception) {
             AppLog.w("http", "${session.method} $path -> ${AppLog.brief(e)}")
             json(St.INTERNAL_ERROR, errorBody("INTERNAL", e.message ?: "服务器内部错误"))
+        } finally {
+            // NanoHTTPD 每个请求一个新线程，不清理会随请求数慢慢泄
+            currentPath.remove()
+            bodyCache.remove()
         }
     }
 
@@ -78,7 +98,8 @@ class WebServer(
     private fun api(session: NanoHTTPD.IHTTPSession, path: String): Resp {
         val seg = path.trim('/').split('/')
         val method = session.method
-        val body by lazy { readBody(session) }
+        // serve() 里已经读过一次，这里取缓存，不再碰 socket
+        val body: String = bodyCache.get() ?: ""
 
         val id = seg.getOrNull(2)?.toLongOrNull()
         val arg = seg.getOrNull(3)

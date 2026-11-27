@@ -274,6 +274,24 @@ setImmediate(async function () {
     check('回车处理正常', false, e.message);
   }
 
+  console.log('\n\x1b[1m无 body 的 POST 不应发 body\x1b[0m');
+  try {
+    var sent = [];
+    var origFetch = global.fetch;
+    global.fetch = function (url, init) {
+      sent.push({ url: url, hasBody: !!(init && init.body !== undefined) });
+      return origFetch(url, init);
+    };
+    click('toggle', { 'data-id': 101 });
+    await new Promise(function (r) { realSetTimeout(r, 20); });
+    global.fetch = origFetch;
+    var t = sent.filter(function (s) { return s.url.indexOf('/toggle') !== -1; })[0];
+    check('toggle 请求不带 body', t && !t.hasBody,
+      t ? '带了 body' : '没捕获到 toggle 请求');
+  } catch (e) {
+    check('无 body 的 POST 正常', false, e.message);
+  }
+
   console.log('\n\x1b[1m错误上报\x1b[0m');
   try {
     var before2 = calls.length;

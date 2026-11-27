@@ -24,7 +24,8 @@
 | 电脑不再显示令牌 UI | ⏳ 待验证（静态资源改为 no-store，需硬刷新一次） |
 | 日夜主题切换 | ⏳ 待验证（默认跟随系统，可手动锁定） |
 | 页面能正常上下滚动 | ⏳ 待验证（已去掉 html/body 上的 overflow-x: hidden） |
-| 错误弹窗会写进诊断日志 | ⏳ 待验证（前端主动 POST /api/log） |
+| 错误弹窗会写进诊断日志 | ✅ 真机日志已能上报 |
+| 勾选不再随机 400 | ⏳ 待验证（无 body 的 POST 不再发 body） |
 | 电脑端能访问 | 未验证 |
 | 熄屏后 Wi-Fi 仍在线 | 未验证 |
 | 锁规则在后端真的拒绝（409） | 未跑过 curl 冒烟 |
@@ -122,6 +123,10 @@ tools/smoke.sh             真机接口冒烟（curl）
 
 ## 设计上几个不能改的地方
 
+- **无 body 的接口不发 body**。`POST /api/items/{id}/toggle` 这类接口前端曾经总带一个 `{}`，
+  服务端又不需要它；残留在 keep-alive 连接里的字节会被当成下一个请求的起始行，
+  NanoHTTPD 自己判 400 并回一个非 JSON 响应体（前端只能看到 `HTTP_400`，而我们的日志里什么都没有）。
+  两端都做了防备：前端不发、服务端在 `serve()` 里无条件把 body 读完。
 - **`locked` 是派生值**，不是独立真相。它由 `status != active && !allowEditCompleted` 算出，
   只允许 `ChecklistRepository.persisted()` 一个函数写那三列。
 - **锁定校验在 Repository 里**，不在前端禁用。前端只拿到 `locked` 这个结果。

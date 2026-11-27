@@ -31,8 +31,20 @@
         try { payload = text ? JSON.parse(text) : null; } catch (e) { payload = null; }
 
         if (!payload || payload.ok !== true) {
+          // 区分三种失败：
+          //   1. 我们的 JSON 错误体  -> 用里面的 code/message
+          //   2. HTTP 错误但响应体不是 JSON -> 多半不是我们的代码回的，得分得清
+          //   3. 正常响应但没有 ok 字段
+          var isJson = payload !== null;
           var err = (payload && payload.error) || {};
-          throw new ApiError(err.code || ('HTTP_' + res.status), err.message || ('请求失败（' + res.status + '）'));
+          var code = err.code || ('HTTP_' + res.status);
+          var msg = err.message;
+          if (!msg) {
+            msg = isJson
+              ? ('请求失败（' + res.status + '）')
+              : ('响应不是本应用的 JSON（' + res.status + '）—— 多半是服务器内部错误');
+          }
+          throw new ApiError(code, msg);
         }
         return payload.data;
       });
@@ -44,8 +56,12 @@
 
   window.API = {
     GET: function (p) { return call('GET', p); },
-    POST: function (p, b) { return call('POST', p, b || {}); },
-    PUT: function (p, b) { return call('PUT', p, b || {}); },
+    // 不写 `b || {}`：没有 body 的接口就真的不发送 body。
+    // 曾经这里总会补一个 `{}`，于是 toggle / complete 这类接口带上了 Content-Length: 2
+    // 的请求体；若服务端没消费掉，它就会留在 keep-alive 连接里，
+    // 污染下一个请求，表现为随机的 400。
+    POST: function (p, b) { return call('POST', p, b); },
+    PUT: function (p, b) { return call('PUT', p, b); },
     DELETE: function (p) { return call('DELETE', p); }
   };
 
