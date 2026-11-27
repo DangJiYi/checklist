@@ -121,6 +121,13 @@ const DB = {
         { id: 102, name: '喝水', checked: false, sortOrder: 1 },
         { id: 103, name: '拉伸', checked: false, sortOrder: 2 }
       ]
+    },
+    // 空白表：用来验证“空表不显示手动完成”
+    {
+      id: 3, templateId: null, name: '空白检查表', localDate: '2026-11-27',
+      createdAt: 3, completedAt: null, status: 'active',
+      completedCount: 0, totalCount: 0, locked: false, editedAt: null,
+      items: []
     }
   ],
   doneToday: [
@@ -226,6 +233,10 @@ setImmediate(async function () {
   check('进度显示 1/3', includes(out, '完成 1/3'));
   check('卡片上有删除入口（这是上一轮的真 bug）', includes(out, 'data-act="delete"'),
     '卡片的开始：' + String(out).slice(0, 200));
+  check('未锁定的项有单项删除', includes(out, 'data-act="del-item"'));
+  check('空白表不显示手动完成', !includes(out, 'data-act="complete" data-id="3"'),
+    '空白表（0 项）上出现了手动完成按钮，点下去只会 400');
+  check('有内容的表仍可手动完成', includes(out, 'data-act="complete" data-id="1"'));
   check('标题可点进详情', includes(out, 'data-act="open"'));
   check('未完成时不显示已完成分区', includes(out, '今天已完成 1 张'),
     '有已完成记录时应显示分区标题');
@@ -314,6 +325,7 @@ setImmediate(async function () {
     const s = elements.app.innerHTML;
     check('设置页渲染', includes(s, '允许修改已完成表'));
     check('有导出按钮', includes(s, 'data-act="export"'));
+    check('有导入按钮', includes(s, 'data-act="import"'));
     check('显示访问地址', includes(s, '192.168.1.7:8787'));
     // 令牌已按需求移除；界面上不该再出现任何令牌字样
     check('设置页不再提令牌', !includes(s, '令牌'),

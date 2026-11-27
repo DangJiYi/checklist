@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    通知栏小图标。
+
+    系统只取 alpha 通道并统一上色，所以必须是纯白图形 + 透明背景；
+    带颜色的图会被渲染成一个白色方块。
+    尺寸也是固定 24dp，与桌面图标不共用资源。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+
+    <path
+        android:pathData="M4,12.5 L9,17.5 L20,6.5"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2.6"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000" />
+</vector>

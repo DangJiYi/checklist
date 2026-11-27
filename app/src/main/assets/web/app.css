@@ -328,7 +328,36 @@ button.sheet-head:hover .date { color: var(--accent); }
 
 .item.on .box svg { opacity: 1; }
 
-.item .nm { font-size: 15px; }
+/* flex:1 把删除按钮推到行尾；没有它按钮会紧贴文字，看着像文字的一部分 */
+.item .nm { flex: 1; min-width: 0; font-size: 15px; }
+
+/*
+  单项删除。默认半透明，hover/触摸时才凸显：
+  它就在勾选框旁边，太醒目会诱人误触。
+  尺寸 34px 是因为手指点击区小于这个数就很容易点偏。
+*/
+.item-del {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink-faint);
+  font-size: 19px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: .45;
+  transition: opacity .12s, background .12s, color .12s;
+}
+
+.item-del:hover,
+.item-del:focus-visible {
+  opacity: 1;
+  color: var(--warn);
+  background: var(--btn-hover);
+}
 
 .item.on .nm {
   color: var(--ink-faint);

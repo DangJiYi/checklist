@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    自适应图标的前景层。
+
+    画布一律 108×108，但系统会把边缘裁掉：只有中间 72×72 是保证可见的。
+    所以图形必须收在 18..90 之间，否则圆形/圆角方形遮罩下会被切掉一截。
+
+    用矢量而不是 PNG：minSdk 26 恰好是 adaptive icon 的下限，
+    于是整个应用不需要任何位图资源，任意密度都清晰，APK 也不增重。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 勾选符号。粗一些，缩到 48dp 时也不会糊成一条线 -->
+    <path
+        android:pathData="M38,55 L48,66 L71,42"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="9"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000" />
+
+    <!-- 底部一条短横线，暗示“清单”，同时让构图不那么空 -->
+    <path
+        android:pathData="M38,76 L70,76"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="7"
+        android:strokeLineCap="round"
+        android:strokeAlpha="0.45" />
+</vector>

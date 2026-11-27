@@ -235,6 +235,13 @@
     var items = it.items || [];
 
     var listHtml = items.map(function (x) {
+      // 未锁定时每一项右侧给个删除入口。
+      // 后端 DELETE /api/items/{id} 一直就有（含锁定校验），但前端从没接上，
+      // 于是打错一个字只能把整张表删掉重建。
+      var del = locked
+        ? ''
+        : '<button class="item-del" data-act="del-item" data-id="' + x.id + '"' +
+            ' aria-label="删除这一项" title="删除这一项">×</button>';
       return '<li class="item' + (x.checked ? ' on' : '') + '">' +
         '<button class="box" data-act="toggle" data-id="' + x.id + '"' +
           (locked ? ' disabled' : '') +
@@ -242,6 +249,7 @@
           '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 12.5l5 5L19.5 7"/></svg>' +
         '</button>' +
         '<span class="nm">' + esc(x.name) + '</span>' +
+        del +
       '</li>';
     }).join('');
 
@@ -262,7 +270,10 @@
       ? ''
       : '<button class="btn ghost block" data-act="add-item" data-id="' + it.id + '">＋ 添加检查项</button>';
 
-    var completeBtn = locked
+    // 空表不给“手动完成”。
+    // 后端会因 totalCount = 0 回 400（StateMachine 的 EMPTY），
+    // 让一个按钮点下去只会报错的，不如不显示。
+    var completeBtn = (locked || total === 0)
       ? ''
       : '<button class="btn small primary" data-act="complete" data-id="' + it.id + '">手动完成</button>';
 
@@ -473,8 +484,11 @@
         '<p class="hint">版本 ' + esc((S.ping && S.ping.version) || '—') +
           ' · 端口 ' + port +
           ' · 数据库 ' + Math.round(((info.dbBytes || 0) / 1024)) + ' KB</p>' +
-        '<p class="hint">备份：导出全部数据为 JSON，可导到电脑上保存。</p>' +
-        '<button class="btn block" data-act="export">导出全部数据</button>' +
+        '<p class="hint">备份：导出全部数据为 JSON；换手机或误删后可以导回来。</p>' +
+        '<div style="display:flex;gap:8px">' +
+          '<button class="btn" data-act="export" style="flex:1">导出</button>' +
+          '<button class="btn" data-act="import" style="flex:1">导入</button>' +
+        '</div>' +
         '<p class="hint">也可以在电脑上直接取：</p>' +
         '<pre class="log">curl http://' +
           esc(ips[0] || '手机IP') + ':' + port + '/api/export &gt; backup.json</pre>' +
@@ -691,6 +705,120 @@
     );
   }
 
+  /**
+   * 删除单项。
+   *
+   * 先弹确认框：这一列点下去没有任何撤销，而按钮又排得很密，误触成本高。
+   * 提示里带上项名，用户能看到自己删的是哪一条。
+   */
+  function doDeleteItem(itemId) {
+    // 从拿到这个 id 的那批数据里把名字找出来，好写进确认文案
+    var name = '';
+    var pool = [];
+    if (S.detail && S.detail.items) pool = pool.concat(S.detail.items);
+    S.today.forEach(function (x) { if (x.items) pool = pool.concat(x.items); });
+    for (var k = 0; k < pool.length; k++) {
+      if (pool[k].id === itemId) { name = pool[k].name; break; }
+    }
+
+    askConfirm(
+      '删除这一项？',
+      (name ? '「' + name + '」' : '这一项') + '会从这张检查表里移除，不可撤销。',
+      '删除',
+      function () {
+        req('DELETE', '/api/items/' + itemId).then(applyInstance);
+      }
+    );
+  }
+
+  /**
+   * 导入备份。
+   *
+   * 两个步骤：先让人把 JSON 放进来，算一下里面有多少东西，
+   * 再弹一次确认说明“会覆盖现有全部数据”，才真的提交。
+   * 一下点下去就把库里清空太危险，而导入又确实是破坏性的。
+   */
+  function doImport() {
+    var isWebView = document.documentElement.getAttribute('data-env') === 'wv';
+    // WebView 里 <input type=file> 需要 onShowFileChooser 才会弹选择器，我们没实现，
+    // 所以手机上不展示这个按钮——点了没反应比不提供更差。
+    var picker = isWebView ? '' :
+      '<label class="hint" style="display:block;margin-bottom:6px">选择备份文件</label>' +
+      '<input type="file" id="import-file" accept=".json,application/json" ' +
+        'style="width:100%;margin-bottom:12px">';
+
+    openModal(
+      '<h3>导入备份</h3>' +
+      '<p>把之前导出的 JSON 粘贴到下面' + (isWebView ? '' : '，或选择文件') + '。</p>' +
+      picker +
+      '<textarea id="import-json" placeholder=\'{"templates":[…],"instances":[…]} \' ' +
+        'style="min-height:150px" spellcheck="false"></textarea>' +
+      '<button class="btn primary block" data-act="import-parse">继续</button>' +
+      '<button class="btn ghost block" data-act="close">取消</button>'
+    );
+
+    var file = document.getElementById('import-file');
+    if (file) {
+      file.addEventListener('change', function () {
+        var f = file.files && file.files[0];
+        if (!f) return;
+        var reader = new FileReader();
+        reader.onload = function () {
+          var ta = document.getElementById('import-json');
+          if (ta) ta.value = String(reader.result || '');
+          toast('已读入 ' + f.name);
+        };
+        reader.readAsText(f, 'utf-8');
+      });
+    }
+  }
+
+  /** 第二阶段：解析，报出数量，再让人确认覆盖。 */
+  function doImportParse() {
+    var ta = document.getElementById('import-json');
+    var raw = ta ? ta.value.trim() : '';
+    if (!raw) { toast('还没有内容'); return; }
+
+    var data;
+    try {
+      data = JSON.parse(raw);
+    } catch (e) {
+      toast('不是合法的 JSON');
+      return;
+    }
+    if (!data || typeof data !== 'object') { toast('不是备份文件'); return; }
+
+    var tpls = Array.isArray(data.templates) ? data.templates : [];
+    var insts = Array.isArray(data.instances) ? data.instances : [];
+    if (!tpls.length && !insts.length) {
+      toast('这份备份里没有模板或检查表');
+      return;
+    }
+
+    askConfirm(
+      '确认覆盖现有数据？',
+      '备份里有 ' + tpls.length + ' 个模板、' + insts.length + ' 张检查表。' +
+        '导入会删除现在全部数据并替换为备份里的内容，不可撤销。',
+      '覆盖并导入',
+      function () { sendImport(data); }
+    );
+  }
+
+  function sendImport(data) {
+    req('POST', '/api/import', data).then(function (r) {
+      if (!r) return;
+      toast('已恢复 ' + r.templates + ' 个模板、' + r.instances + ' 张表' +
+        (r.skipped ? '（跳过 ' + r.skipped + ' 条无效数据）' : ''));
+      // 整库都变了，把缓存全丢掉重新拉
+      S.detail = null;
+      S.day = null;
+      S.today = [];
+      S.todayDone = [];
+      lastSig = '';
+      boot();
+    });
+  }
+
   function doExport() {
     // 走 req 而不是直接 API.GET：令牌失效时要触发令牌输入，而不是只弹个 toast
     return req('GET', '/api/export').then(function (data) {
@@ -779,6 +907,10 @@
 
       case 'export': doExport(); break;
 
+      case 'import': doImport(); break;
+
+      case 'import-parse': doImportParse(); break;
+
       case 'item-save': {
         var nameEl = document.getElementById('item-name');
         var itemName = nameEl ? nameEl.value.trim() : '';
@@ -801,6 +933,8 @@
       case 'delete': doDelete(id); break;
 
       case 'add-item': doAddItem(id); break;
+
+      case 'del-item': doDeleteItem(id); break;
 
       case 'open':
         S.detail = null;

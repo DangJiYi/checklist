@@ -6,6 +6,9 @@ import local.checklist.AppInfo
 import local.checklist.AppLog
 import local.checklist.ServerState
 import local.checklist.data.ChecklistRepository
+import local.checklist.data.ImportInstance
+import local.checklist.data.ImportItem
+import local.checklist.data.ImportTemplate
 import local.checklist.data.Instance
 import local.checklist.data.RepoResult
 import local.checklist.data.Status
@@ -202,6 +205,25 @@ class WebServer(
 
             "export" -> if (method == NanoHTTPD.Method.GET) return ok(exportJson())
 
+            // 恢复备份。语义是整包替换，所以在界面上必须先告知用户。
+            "import" -> if (method == NanoHTTPD.Method.POST) {
+                val o = parseJson(body)
+                return reply(
+                    repo.importAll(
+                        templates = parseImportTemplates(o.optJSONArray("templates")),
+                        instances = parseImportInstances(o.optJSONArray("instances")),
+                        settingValues = parseImportSettings(o.optJSONObject("settings"))
+                    )
+                ) { r ->
+                    JSONObject().apply {
+                        put("templates", r.templates)
+                        put("instances", r.instances)
+                        put("items", r.items)
+                        put("skipped", r.skipped)
+                    }
+                }
+            }
+
             // 前端主动上报错误。
             //
             // 为什么不靠 WebChromeClient 收 console.error：
@@ -335,6 +357,93 @@ class WebServer(
         put("templates", templatesArray())
         put("instances", JSONArray(repo.listAll().map { instanceJson(it, true) }))
         put("settings", settingsJson(repo.readSettings()))
+    }
+
+    // ------------------------------------------------------------ 导入解析
+
+    /**
+     * 把导出格式的 JSON 解成导入模型。
+     *
+     * 容错策略：单个条目缺字段就用默认值，而不是整包失败。
+     * 因为这是“恢复备份”，用户手上的文件可能是旧版本导出的、
+     * 也可能被别的工具改过；能恢复多少算多少，跳过的数量会回给界面。
+     * 但结构性错误（根本不是 JSON 对象）会直接报错，那不是备份文件。
+     */
+    private fun parseImportTemplates(arr: JSONArray?): List<ImportTemplate> {
+        if (arr == null) return emptyList()
+        val out = ArrayList<ImportTemplate>(arr.length())
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            val names = ArrayList<String>()
+            val items = o.optJSONArray("items")
+            if (items != null) {
+                for (j in 0 until items.length()) {
+                    val it = items.optJSONObject(j) ?: continue
+                    val n = it.optString("name")
+                    if (n.isNotBlank()) names.add(n)
+                }
+            }
+            out.add(
+                ImportTemplate(
+                    id = o.optLong("id").takeIf { it > 0 },
+                    name = o.optString("name"),
+                    createdAt = o.optLong("createdAt").takeIf { it > 0 } ?: System.currentTimeMillis(),
+                    items = names
+                )
+            )
+        }
+        return out
+    }
+
+    private fun parseImportInstances(arr: JSONArray?): List<ImportInstance> {
+        if (arr == null) return emptyList()
+        val out = ArrayList<ImportInstance>(arr.length())
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            val items = ArrayList<ImportItem>()
+            val arr2 = o.optJSONArray("items")
+            if (arr2 != null) {
+                for (j in 0 until arr2.length()) {
+                    val it = arr2.optJSONObject(j) ?: continue
+                    val n = it.optString("name")
+                    if (n.isNotBlank()) items.add(ImportItem(n, it.optBoolean("checked", false)))
+                }
+            }
+            val completedAt = o.optLong("completedAt").takeIf { it > 0 }
+            val status = Status.of(o.optString("status"))
+            out.add(
+                ImportInstance(
+                    id = o.optLong("id").takeIf { it > 0 },
+                    templateId = o.optLong("templateId").takeIf { it > 0 },
+                    name = o.optString("name"),
+                    localDate = o.optString("localDate"),
+                    createdAt = o.optLong("createdAt").takeIf { it > 0 }
+                        ?: (completedAt ?: System.currentTimeMillis()),
+                    completedAt = completedAt,
+                    status = status,
+                    items = items,
+                    editedAt = o.optLong("editedAt").takeIf { it > 0 }
+                )
+            )
+        }
+        return out
+    }
+
+    private fun parseImportSettings(o: JSONObject?): Map<String, String> {
+        if (o == null) return emptyMap()
+        val out = HashMap<String, String>()
+        val keys = o.keys()
+        while (keys.hasNext()) {
+            val k = keys.next()
+            val v = o.opt(k)
+            // allowEditCompleted 在导出里是布尔值，库里存的是 "0"/"1"
+            out[k] = when (v) {
+                is Boolean -> if (v) "1" else "0"
+                null, JSONObject.NULL -> ""
+                else -> v.toString()
+            }
+        }
+        return out
     }
 
     // ------------------------------------------------------------ 静态文件

@@ -149,7 +149,7 @@ class ServerService : Service() {
         return Notification.Builder(this, CHANNEL_ID)
             .setContentTitle("每日检查表")
             .setContentText(text)
-            .setSmallIcon(android.R.drawable.stat_notify_sync)
+            .setSmallIcon(R.drawable.ic_notify)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setShowWhen(false)

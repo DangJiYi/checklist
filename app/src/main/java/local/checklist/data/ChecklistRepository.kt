@@ -37,6 +37,38 @@ data class Instance(
     val items: List<Item>
 )
 
+// ---------------------------------------------------------------- 导入模型
+
+/** 导入用的模板。id 为 null 或已被占用时由数据库自增。 */
+data class ImportTemplate(
+    val id: Long?,
+    val name: String,
+    val createdAt: Long,
+    val items: List<String>
+)
+
+data class ImportItem(val name: String, val checked: Boolean)
+
+data class ImportInstance(
+    val id: Long?,
+    val templateId: Long?,
+    val name: String,
+    val localDate: String,
+    val createdAt: Long,
+    val completedAt: Long?,
+    val status: Status,
+    val items: List<ImportItem>,
+    val editedAt: Long?
+)
+
+/** 导入结果，回给界面显示“恢复了多少”。 */
+data class ImportResult(
+    val templates: Int,
+    val instances: Int,
+    val items: Int,
+    val skipped: Int
+)
+
 sealed class RepoResult<out T> {
     data class Ok<T>(val value: T) : RepoResult<T>()
     data class Err(val code: String, val message: String) : RepoResult<Nothing>()
@@ -596,6 +628,181 @@ class ChecklistRepository(private val helper: Db) {
         } else {
             db.execSQL("UPDATE instances SET locked = CASE WHEN status <> 'active' THEN 1 ELSE 0 END")
         }
+    }
+
+    // ------------------------------------------------------------ 导入
+
+    /**
+     * 整包导入（恢复备份）。
+     *
+     * 语义是**替换**，不是合并。合并看起来更诱人，但会造成两个真问题：
+     * 同一条实例在两边都被改过时无法判定谁对；以及必须重写全部 id
+     * 并重新维护 template_id 引用关系。恢复备份的正确含义本来就是
+     * “把数据变回备份里的样子”，所以这里做全量替换，界面上先告知清楚。
+     *
+     * 全部动作在同一个事务里：中途任何一步失败，旧数据原样保留。
+     * （半导入的数据比什么都没导入更难收拾——用户分不清哪些是新的哪些是旧的。）
+     *
+     * 时间戳、完成状态、勾选状态全部按备份原样恢复，不重新计算，
+     * 否则历史上的“部分完成 3/5”会被改成今天的 0/5。
+     * 只有 locked 不采用备份值，而是按当前开关重算。
+     */
+    fun importAll(
+        templates: List<ImportTemplate>,
+        instances: List<ImportInstance>,
+        settingValues: Map<String, String>
+    ): RepoResult<ImportResult> = guarded {
+        write { db ->
+            // 外键开着：子表必须先删，否则级联不会触发
+            db.delete("instance_items", null, null)
+            db.delete("instances", null, null)
+            db.delete("template_items", null, null)
+            db.delete("templates", null, null)
+
+            // 先写设置再插数据。
+            // 原因是 locked 要按 allowEditCompleted 算：如果备份里这个开关
+            // 和当前值不同，先插后写就会拿旧值算出一批错的 locked。
+            settingValues.forEach { (k, v) ->
+                if (k in SettingsStore.WRITABLE) settings.put(db, k, v)
+            }
+
+            var skipped = 0
+            var itemCount = 0
+            var templateCount = 0
+            var instanceCount = 0
+            val keepTemplateIds = claimable(templates.mapNotNull { it.id })
+            val keepInstanceIds = claimable(instances.mapNotNull { it.id })
+            val allowEdit = allowEditCompleted(db)
+
+            for (t in templates) {
+                val n = t.name.trim()
+                val names = t.items.map { it.trim() }.filter { it.isNotEmpty() }
+                if (n.isEmpty() || names.isEmpty()) {
+                    skipped++
+                    continue
+                }
+                val wantId = t.id
+                val newId = if (wantId != null && wantId > 0 && keepTemplateIds.remove(wantId)) {
+                    db.insertOrThrow(
+                        "templates", null,
+                        ContentValues().apply {
+                            put("id", wantId)
+                            put("name", n)
+                            put("created_at", t.createdAt)
+                            put("archived", 0)
+                        }
+                    )
+                    wantId
+                } else {
+                    db.insertOrThrow(
+                        "templates", null,
+                        ContentValues().apply {
+                            put("name", n)
+                            put("created_at", t.createdAt)
+                            put("archived", 0)
+                        }
+                    )
+                }
+                insertTemplateItems(db, newId, names)
+                templateCount++
+            }
+
+            for (inst in instances) {
+                val n = inst.name.trim()
+                if (n.isEmpty()) {
+                    skipped++
+                    continue
+                }
+                val items = inst.items.filter { it.name.isNotBlank() }
+                val total = items.size
+                val checked = items.count { it.checked }
+                // 备份里的 status 可能与 counts 不一致（手工改过导出文件），按 counts 归一。
+                // 但“已完成”这件事本身要保留：曾手动完成过的表不应因导入而变回进行中。
+                val status = when {
+                    !inst.status.isCompleted -> Status.ACTIVE
+                    total > 0 && checked >= total -> Status.COMPLETED_FULL
+                    else -> Status.COMPLETED_PARTIAL
+                }
+
+                val wantId = inst.id
+                val newId = if (wantId != null && wantId > 0 && keepInstanceIds.remove(wantId)) {
+                    db.insertOrThrow(
+                        "instances", null,
+                        ContentValues().apply {
+                            put("id", wantId)
+                            applyInstanceRow(this, inst, n, total, checked, status, allowEdit)
+                        }
+                    )
+                    wantId
+                } else {
+                    db.insertOrThrow(
+                        "instances", null,
+                        ContentValues().apply {
+                            applyInstanceRow(this, inst, n, total, checked, status, allowEdit)
+                        }
+                    )
+                }
+                instanceCount++
+
+                items.forEachIndexed { index, item ->
+                    db.insertOrThrow(
+                        "instance_items", null,
+                        ContentValues().apply {
+                            put("instance_id", newId)
+                            put("name", item.name.trim())
+                            put("checked", if (item.checked) 1 else 0)
+                            put("sort_order", index)
+                            // 勾选时间未知就留空，不要拿“现在”冒充历史
+                            if (item.checked && inst.completedAt != null) put("checked_at", inst.completedAt)
+                        }
+                    )
+                    itemCount++
+                }
+            }
+
+            ImportResult(
+                templates = templateCount,
+                instances = instanceCount,
+                items = itemCount,
+                skipped = skipped
+            )
+        }
+    }
+
+    /**
+     * 备份里哪些 id 可以原样复用。
+     *
+     * 返回的是**可变集合**，调用方每用掉一个就 remove 一个：
+     * 手改过的备份很容易写出重复 id，只用不可变集合判断“在不在”会让第二行也认为可用，
+     * 结果直撞主键。去掉之后第二行自然回落到自增。
+     *
+     * 模板与实例是不同表，id 空间独立，所以要分别处理（各自调一次）。
+     */
+    private fun claimable(ids: List<Long>): MutableSet<Long> {
+        val set = HashSet<Long>()
+        for (id in ids) if (id > 0) set.add(id)
+        return set
+    }
+
+    private fun applyInstanceRow(
+        cv: ContentValues,
+        inst: ImportInstance,
+        name: String,
+        total: Int,
+        checked: Int,
+        status: Status,
+        allowEditCompleted: Boolean
+    ) {
+        cv.put("template_id", inst.templateId)
+        cv.put("name", name)
+        cv.put("local_date", if (DATE_RE.matches(inst.localDate)) inst.localDate else LocalDate.now().toString())
+        cv.put("created_at", inst.createdAt)
+        cv.put("completed_at", inst.completedAt)
+        cv.put("status", status.id)
+        cv.put("completed_count", checked)
+        cv.put("total_count", total)
+        cv.put("locked", if (StateMachine.isLocked(status, allowEditCompleted)) 1 else 0)
+        cv.put("edited_at", inst.editedAt)
     }
 
     // ------------------------------------------------------------ 诊断
