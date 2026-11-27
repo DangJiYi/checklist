@@ -91,6 +91,44 @@ if (missing.length === 0) {
 if (/html\[data-theme="dark"\]/.test(stripped)) ok('存在夜间主题块');
 else bad('缺少 html[data-theme="dark"] 块');
 
+// overflow-x: hidden 放在 html/body 上会把页面变成滚动容器，Chrome 里表现为整页滚不动。
+// 这个坑踩过一次，所以当断言钉住。
+if (/overflow-x:\s*hidden/.test(stripped)) {
+  bad('出现 overflow-x: hidden：这会使 html/body 成为滚动容器，可能导致整页无法滚动');
+} else {
+  ok('未使用 overflow-x: hidden');
+}
+
+// 两套主题的 --bg 必须不同，否则切主题时页面背景不会变（“背景不会修改”）
+function extractBlock(selector) {
+  const idx = stripped.indexOf(selector);
+  if (idx < 0) return '';
+  const open = stripped.indexOf('{', idx);
+  let depth = 0;
+  for (let i = open; i < stripped.length; i++) {
+    if (stripped[i] === '{') depth++;
+    else if (stripped[i] === '}') {
+      depth--;
+      if (depth === 0) return stripped.slice(open, i + 1);
+    }
+  }
+  return '';
+}
+
+const lightBlock = extractBlock(':root');
+const darkBlock = extractBlock('html[data-theme="dark"]');
+function bgOf(block) {
+  const m = block.match(/--bg:\s*([^;]+);/);
+  return m ? m[1].trim() : null;
+}
+const lightBg = bgOf(lightBlock);
+const darkBg = bgOf(darkBlock);
+if (lightBg && darkBg && lightBg !== darkBg) {
+  ok('两套主题背景不同（light ' + lightBg + ' / dark ' + darkBg + '）');
+} else {
+  bad('两套主题的 --bg 相同或缺失，切主题时背景不会变化');
+}
+
 if (fail === 0) console.log('');
 console.log(fail === 0 ? 'CSS 检查通过' : 'CSS 检查失败 ' + fail + ' 项');
 process.exit(fail === 0 ? 0 : 1);

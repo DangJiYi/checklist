@@ -46,7 +46,7 @@
     try { localStorage.setItem(THEME_KEY, m); } catch (e) { /* 隐私模式 */ }
     // 让状态栏/地址栏的底色跟着走，不然暗色页面配浅色状态栏很割裂
     var meta = document.querySelector && document.querySelector('meta[name=theme-color]');
-    if (meta && meta.setAttribute) meta.setAttribute('content', dark ? '#0a0d12' : '#fbf8f1');
+    if (meta && meta.setAttribute) meta.setAttribute('content', dark ? '#0a0d12' : '#e9e3d6');
   }
 
   function esc(v) {

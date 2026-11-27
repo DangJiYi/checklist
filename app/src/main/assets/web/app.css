@@ -15,8 +15,9 @@
   --accent-strong: #276b5b;
   --accent-soft: #e2efe9;
   --warn: #b4552f;
-  --bg: #0f1319;
-  --bg-2: #161c24;
+  /* 桌面背景：浅色主题下是一块暖灰底，卡片浮在上面 */
+  --bg: #e9e3d6;
+  --bg-2: #f4efe4;
   --radius: 18px;
 
   /* 控件颜色单独抽出来：夜间主题只改这几个值就能整体变暗 */
@@ -30,13 +31,22 @@
   --box-off: #d8d0bf;
   --cell-bg: rgba(0, 0, 0, .04);
   --sheen: rgba(255, 255, 255, .55);
-  --shadow: rgba(0, 0, 0, .45);
-  /* 顶栏两种底色：桌面是浮在深底上的半透明条，手机是纸张色的一条。
+  --shadow: rgba(0, 0, 0, .18);
+  /* 顶栏两种底色：桌面是浮在背景上的半透明条，手机是纸张色的一条。
      用一个变量表达不了，拆成两个再由媒体查询选。 */
-  --topbar-wide: rgba(15, 19, 25, .92);
+  --topbar-wide: rgba(233, 227, 214, .92);
   --topbar-narrow: rgba(251, 248, 241, .95);
-  --topbar-ink: #cfd8e3;
-  --topbar-tab: #8e9aa8;
+  --topbar-ink: #39424c;
+  --topbar-tab: #6d7783;
+  /* 分隔细线 */
+  --hairline: rgba(0, 0, 0, .08);
+  /* 侧栏日历（浅色主题下是纸色面板） */
+  --cal-border: rgba(0, 0, 0, .10);
+  --cal-ink: #1d2229;
+  --cal-cell: rgba(0, 0, 0, .04);
+  --cal-cell-ink: #2c3540;
+  --cal-faint: #8b95a1;
+  --cal-hover: rgba(0, 0, 0, .18);
   /* 已完成表上的日期戳章 */
   --stamp-border: rgba(47, 125, 106, .55);
   --stamp-ink: rgba(47, 125, 106, .8);
@@ -79,6 +89,14 @@ html[data-theme="dark"] {
   --topbar-narrow: rgba(26, 32, 41, .95);
   --topbar-ink: #c6d0da;
   --topbar-tab: #78848f;
+  --hairline: rgba(255, 255, 255, .06);
+  /* 夜间侧栏日历：比背景略亮一挡，才能从底上分出来 */
+  --cal-border: rgba(255, 255, 255, .07);
+  --cal-ink: #dfe6ee;
+  --cal-cell: rgba(255, 255, 255, .04);
+  --cal-cell-ink: #cdd6e0;
+  --cal-faint: #6c7787;
+  --cal-hover: rgba(255, 255, 255, .22);
   /* 夜间主色变亮了，仍用白字会发糊，换成深墨色 */
   --stamp-border: rgba(79, 191, 160, .45);
   --stamp-ink: rgba(79, 191, 160, .85);
@@ -97,24 +115,25 @@ html, body {
 }
 
 /*
-  四边发黑的成因有两层：
-    1. 窄屏只改了 body 的颜色，html 仍是深色底，滚动/回弹时露出来。
-    2. 今天页在手机上仍然走 480px 双栏网格，内容比屏宽，能左右拖。
-  第 2 条已在 .wrap.has-side 那处修掉（真因）；
-  这里的 overflow-x: hidden 只作为兜底，防止以后再出现类似溢出。
+  滚动：这里曾经有 overflow-x: hidden + overscroll-behavior: none。
+  那是在遮“手机上能左右拖”的症状，而真因是窄屏没重置 480px 双栅网格
+  （已改在 .wrap.has-side 那处）。这些声明留着反而引入了新问题：
+  html 和 body 同时变成滚动容器，Chrome 里页面就滚不动了。
+  真因修了之后，兜底也就不需要了。
 */
 html {
   background: var(--bg);
-  overflow-x: hidden;
-  overscroll-behavior: none;
+  /*
+    overflow-x: clip 而不是 hidden。
+    hidden 会把 html/body 变成滚动容器，Chrome 里就会表现为整页滚不动；
+    clip 只裁切、不建立滚动容器，两轴的滚动行为不受影响。
+  */
+  overflow-x: clip;
 }
 
 body {
   min-height: 100vh;
-  overflow-x: hidden;
-  overscroll-behavior-y: none;
-  /* WebView 里惯性滚动不需要额外的回弹效果 */
-  -webkit-overflow-scrolling: touch;
+  /* 不要再在 body 上写 overflow-x，那会让 body 自己变成滚动容器 */
 }
 
 button, input, textarea { font: inherit; color: inherit; }
@@ -133,7 +152,7 @@ a { color: inherit; text-decoration: none; }
   padding: 12px 20px;
   background: var(--topbar-wide);
   backdrop-filter: blur(8px);
-  border-bottom: 1px solid rgba(255, 255, 255, .06);
+  border-bottom: 1px solid var(--hairline);
 }
 
 .brand {
@@ -429,10 +448,10 @@ button.sheet-head:hover .date { color: var(--accent); }
 
 .cal {
   background: var(--bg-2);
-  border: 1px solid rgba(255, 255, 255, .07);
+  border: 1px solid var(--cal-border);
   border-radius: var(--radius);
   padding: 18px;
-  color: #dfe6ee;
+  color: var(--cal-ink);
 }
 
 .cal-head {
@@ -458,7 +477,7 @@ button.sheet-head:hover .date { color: var(--accent); }
 .cal-grid > span {
   text-align: center;
   font-size: 11px;
-  color: #6c7787;
+  color: var(--cal-faint);
   padding: 4px 0;
 }
 
@@ -467,8 +486,8 @@ button.sheet-head:hover .date { color: var(--accent); }
   aspect-ratio: 1 / 1;
   border: 1px solid transparent;
   border-radius: 10px;
-  background: rgba(255, 255, 255, .04);
-  color: #cdd6e0;
+  background: var(--cal-cell);
+  color: var(--cal-cell-ink);
   font-size: 13px;
   cursor: pointer;
   display: grid;
@@ -476,7 +495,7 @@ button.sheet-head:hover .date { color: var(--accent); }
   padding: 0;
 }
 
-.cal-grid .cell:hover { border-color: rgba(255, 255, 255, .22); }
+.cal-grid .cell:hover { border-color: var(--cal-hover); }
 
 .cal-grid .cell.void {
   background: transparent;
@@ -485,8 +504,8 @@ button.sheet-head:hover .date { color: var(--accent); }
 
 .cal-grid .cell.today {
   border-color: var(--accent);
-  /* 这里的字坐在深色日历底上（两套主题都是深底），不能用 --on-accent */
-  color: #fff;
+  color: var(--accent);
+  font-weight: 600;
 }
 
 .dots {
@@ -506,7 +525,11 @@ button.sheet-head:hover .date { color: var(--accent); }
 .dot.full { background: #4fbfa0; }
 .dot.part { background: #d9a441; }
 
-/* 窄屏也给日历换个纸色，避免深色块突兀 */
+/*
+  窄屏日历本体：手机上没有侧栏，日历是页面主体的一块，
+  底色取纸色而不是 --bg-2（后者是桌面上“浮在背景上的面板”色）。
+  文字颜色已经在变量里按主题分好了，这里不用再改。
+*/
 @media (max-width: 899px) {
   .cal {
     background: var(--paper);
@@ -517,7 +540,6 @@ button.sheet-head:hover .date { color: var(--accent); }
     background: var(--cell-bg);
     color: var(--ink);
   }
-  .cal-grid .cell.today { border-color: var(--accent); color: var(--accent); }
   .cal-grid > span { color: var(--ink-faint); }
 }
 
