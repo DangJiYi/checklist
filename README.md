@@ -17,7 +17,7 @@
 | 项 | 状态 |
 | :--- | :--- |
 | Kotlin 能编译通过 | 未验证 |
-| 单元测试（StateMachine 14 项）通过 | 未验证 |
+| 单元测试（StateMachine 15 项）通过 | 未验证 |
 | APK 内含 `assets/web/*` | CI 里断言 |
 | WebView 能加载本地页面 | 未验证 |
 | 电脑端能访问 | 未验证 |

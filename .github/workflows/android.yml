@@ -17,6 +17,11 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # 失败时要把编译日志推到 ci-log 分支，所以需要 contents: write。
+    # 这是整个工作流唯一的写权限；工作流只在 push 到 main 时触发，
+    # 推 ci-log 分支不会引起构建循环。
+    permissions:
+      contents: write
 
     steps:
       - uses: actions/checkout@v4
@@ -67,10 +72,26 @@ jobs:
           gradle-version: '8.11.1'
 
       - name: Unit tests (StateMachine)
-        run: gradle --no-daemon --console=plain testDebugUnitTest
+        run: |
+          set -o pipefail
+          gradle --no-daemon --console=plain testDebugUnitTest 2>&1 | tee gradle.log
+
+      - name: Show build errors
+        # 失败时把编译器的原话贴到 run 页面的 Summary 里。
+        # GitHub 的原始日志下载需要鉴权，Summary 是免登录能看到的。
+        if: failure()
+        run: |
+          {
+            echo '## 失败输出'
+            echo '```'
+            tail -n 150 gradle.log 2>/dev/null || echo '(没有捕获到日志)'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Assemble debug APK
-        run: gradle --no-daemon --console=plain assembleDebug
+        run: |
+          set -o pipefail
+          gradle --no-daemon --console=plain assembleDebug 2>&1 | tee -a gradle.log
 
       - name: Verify APK contents
         run: |
@@ -116,6 +137,52 @@ jobs:
           path: app/build/outputs/apk/debug/*.apk
           retention-days: 30
           if-no-files-found: error
+
+      # 失败时把编译器原文送到两个地方：
+      #   1. Job Summary（免登录可见，着急时直接看）
+      #   2. ci-log 分支（完整日志，供本地 git fetch 读取）
+      # 放在最后一步，这样无论哪一步挂掉都能抓到，包括 assembleDebug。
+      - name: Publish build log
+        if: failure()
+        run: |
+          {
+            echo "run: ${{ github.run_id }}"
+            echo "sha: ${{ github.sha }}"
+            echo "url: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo
+            if [ -f gradle.log ]; then
+              echo "gradle.log: $(wc -l < gradle.log) lines"
+              echo
+              cat gradle.log
+            else
+              echo "(gradle.log 不存在：失败发生在 Gradle 之前)"
+            fi
+          } > ci-build.log
+
+          {
+            echo '## 失败输出'
+            echo ''
+            echo '```'
+            tail -n 120 ci-build.log
+            echo '```'
+            echo ''
+            echo '完整日志：`git fetch origin ci-log && git show FETCH_HEAD:build.log`'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # 用 plumbing 提交，而不是新建临时仓库：
+          # 这样能复用 checkout 已经配好的 origin 凭据，
+          # 不必把 token 拼进 URL（git 报错时会把 URL 一起打出来，而这是公开仓库）。
+          export GIT_AUTHOR_NAME="github-actions[bot]"
+          export GIT_AUTHOR_EMAIL="41898282+github-actions[bot]@users.noreply.github.com"
+          export GIT_COMMITTER_NAME="$GIT_AUTHOR_NAME"
+          export GIT_COMMITTER_EMAIL="$GIT_AUTHOR_EMAIL"
+
+          BLOB=$(git hash-object -w ci-build.log)
+          TREE=$(printf '100644 blob %s\tbuild.log\n' "$BLOB" | git mktree)
+          COMMIT=$(git commit-tree "$TREE" -m "ci log for ${{ github.sha }}")
+          # 强制覆盖：这条分支只存最近一次失败的日志，不需要历史
+          git push -f -q origin "$COMMIT:refs/heads/ci-log"
+          echo "日志已推到 ci-log 分支（$COMMIT）"
 
       - name: Upload test report on failure
         if: failure()
