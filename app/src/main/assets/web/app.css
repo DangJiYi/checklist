@@ -30,10 +30,11 @@ html, body {
 }
 
 /*
-  四边发黑的成因：滚动/回弹时露出的是 html 的背景，
-  而窄屏只改了 body 的颜色，html 仍是深色底。
-  这里把两者的背景绑在一起，并禁止横向溢出——
-  横向一旦存在，右边缘就会露出一条深色。
+  四边发黑的成因有两层：
+    1. 窄屏只改了 body 的颜色，html 仍是深色底，滚动/回弹时露出来。
+    2. 今天页在手机上仍然走 480px 双栏网格，内容比屏宽，能左右拖。
+  第 2 条已在 .wrap.has-side 那处修掉（真因）；
+  这里的 overflow-x: hidden 只作为兜底，防止以后再出现类似溢出。
 */
 html {
   background: var(--bg);
@@ -101,17 +102,25 @@ a { color: inherit; text-decoration: none; }
   padding: 28px 16px 64px;
 }
 
-.wrap.has-side {
-  max-width: 880px;
-  display: grid;
-  grid-template-columns: 480px 1fr;
-  gap: 28px;
-  align-items: start;
-}
-
 .side { display: none; }
 
+/*
+  双栏只在宽屏生效。
+
+  这里曾经把 grid 写在 .wrap.has-side 外面：今天页在所有宽度都会带上 side，
+  于是手机上也在用 grid-template-columns: 480px 1fr——屏幕只有 360px 时，
+  内容被强塞进 480px 的列里，结果就是横向溢出，可以左右拖动，
+  露出底下的窗口底色。用 overflow-x: hidden 只能遮住现象，不能修因。
+*/
 @media (min-width: 900px) {
+  .wrap.has-side {
+    max-width: 880px;
+    display: grid;
+    grid-template-columns: 480px 1fr;
+    gap: 28px;
+    align-items: start;
+  }
+
   .side { display: block; }
 }
 
@@ -669,16 +678,34 @@ pre.log {
     padding: 0 0 calc(28px + env(safe-area-inset-bottom));
   }
 
+  /*
+    卡片用负 margin 抵消，保持“铺满屏幕”；
+    卡片之外的东西（分区标题、已完成列表、新建按钮）靠这层 padding 留边。
+    之前 .wrap 横向 padding 是 0，这些元素全部贴到屏幕边缘。
+  */
+  .col { padding: 0 14px; }
+
   .sheet {
     border-radius: 0;
     box-shadow: none;
     padding: 22px 20px 18px;
+    margin-left: -14px;
+    margin-right: -14px;
   }
 
   .sheet + .sheet {
     margin-top: 10px;
     border-top: 1px solid var(--paper-edge);
   }
+
+  /* 首张卡片顶住顶栏时不显得糊在一起 */
+  .col > .sheet:first-child { margin-top: 0; }
+
+  .sect { padding-left: 2px; }
+
+  .day-item { width: 100%; }
+
+  .btn.block { width: 100%; }
 
   .empty { padding: 56px 24px; }
 
