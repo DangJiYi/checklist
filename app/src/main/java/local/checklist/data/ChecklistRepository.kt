@@ -44,7 +44,9 @@ sealed class RepoResult<out T> {
 }
 
 /** 事务内的业务拒绝：抛出后事务回滚，再由 guarded 转成 RepoResult.Err。 */
-private class Reject(val code: String, val message: String) : RuntimeException(message)
+// message 不写成 val：Throwable 已经有 message 成员，再用 val 声明会报
+// "'message' hides member of supertype 'Throwable'"。构造参数直接传给父类即可。
+private class Reject(val code: String, message: String) : RuntimeException(message)
 
 // ---------------------------------------------------------------- 仓库
 
