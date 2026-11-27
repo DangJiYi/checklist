@@ -79,16 +79,31 @@
     return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
   }
 
+  /**
+   * 把错误上报到服务端，落进 app.log，诊断区可见。
+   *
+   * 用 fetch 直接发，不走 API 封装：这条路径本身绝不能再失败一次，
+   * 否则错误处理里报错会递归。失败就默默放弃。
+   */
+  function reportError(where, code, message) {
+    try {
+      var line = '[client] ' + where + ' -> ' + (code || '?') + ' ' + (message || '');
+      fetch('/api/log', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json; charset=utf-8' },
+        body: line,
+        keepalive: true
+      }).catch(function () { /* 上报失败就算了 */ });
+    } catch (e) { /* 上报失败就算了 */ }
+  }
+
   function req(method, path, body) {
     return API[method](path, body).catch(function (e) {
       // 把请求本身也报出来。光说"请求失败 400"没办法定位，
       // 写清是哪个接口之后，看一次就知道问题在哪。
       var where = method + ' ' + path;
       toast((e.message || '请求失败') + ' · ' + where);
-      // console.error 会被 WebChromeClient 收进 app.log，设置页能看
-      if (window.console && console.error) {
-        console.error('[api] ' + where + ' -> ' + (e.code || '?') + ' ' + (e.message || ''));
-      }
+      reportError(where, e.code, e.message);
       return null;
     });
   }
@@ -447,7 +462,14 @@
         '<p class="hint">也可以在电脑上直接取：</p>' +
         '<pre class="log">curl http://' +
           esc(ips[0] || '手机IP') + ':' + port + '/api/export &gt; backup.json</pre>' +
-        (log ? '<pre class="log">' + esc(log) + '</pre>' : '') +
+        '<div class="field" style="border-bottom:0;padding-bottom:0">' +
+          '<span class="label">运行日志' +
+            '<span class="sub">前端报错、4xx 拒绝都会记在这里（最多 40 行）</span>' +
+          '</span>' +
+          '<button class="btn small" data-act="refresh-log">刷新</button>' +
+        '</div>' +
+        (log ? '<pre class="log">' + esc(log) + '</pre>'
+             : '<p class="hint">暂无日志。</p>') +
       '</div>';
   }
 
@@ -719,6 +741,11 @@
         break;
       }
 
+      case 'refresh-log':
+        // 诊断区之前只在启动时拉一次，之后发生的错误根本不会出现。
+        loadStatus().then(function () { render(); toast('日志已刷新'); });
+        break;
+
       case 'export': doExport(); break;
 
       case 'item-save': {
@@ -926,6 +953,17 @@
     } else {
       render();
     }
+  });
+
+  window.addEventListener('error', function (ev) {
+    reportError('window.onerror', 'JS_ERROR',
+      (ev && ev.message) + ' @' + ((ev && ev.filename) || '?') + ':' + ((ev && ev.lineno) || 0));
+  });
+
+  window.addEventListener('unhandledrejection', function (ev) {
+    var r = ev && ev.reason;
+    reportError('unhandledrejection', (r && r.code) || 'REJECTED',
+      (r && r.message) || String(r));
   });
 
   // 系统深色模式变化时，只在"跟随系统"下重新算；手动选的不动。

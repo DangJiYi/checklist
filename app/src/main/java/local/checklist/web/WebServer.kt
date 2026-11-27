@@ -180,12 +180,34 @@ class WebServer(
             }
 
             "export" -> if (method == NanoHTTPD.Method.GET) return ok(exportJson())
+
+            // 前端主动上报错误。
+            //
+            // 为什么不靠 WebChromeClient 收 console.error：
+            // 那条链能不能通取决于 WebView 实现与日志级别，断的时候完全静默，
+            // 而“静默失败”正是我们要消灭的那类问题。
+            // 这里直接落盘，确定性高得多。
+            "log" -> if (method == NanoHTTPD.Method.POST) return ok(appendClientLog(body))
         }
 
         return json(St.NOT_FOUND, errorBody("NOT_FOUND", "接口不存在：${session.method} $path"))
     }
 
     // ------------------------------------------------------------ 载荷
+
+    /**
+     * 把前端上报的内容写进 app.log。
+     *
+     * 刻意不经过 parseJson：那段会因为 U+FFFD 而报 400，
+     * 但“要记一条错误日志”这件事本身绝不能失败。
+     * 所以这里容错拉满：能取到什么就记什么。
+     */
+    private fun appendClientLog(raw: String): JSONObject {
+        val text = raw.trim()
+        val oneLine = text.replace('\r', ' ').replace('\n', ' ').take(600)
+        if (oneLine.isNotEmpty()) AppLog.w("client", oneLine)
+        return JSONObject().apply { put("logged", oneLine.isNotEmpty()) }
+    }
 
     private fun ping(): JSONObject = JSONObject().apply {
         put("app", AppInfo.APP_ID)

@@ -18,6 +18,10 @@ const path = require('path');
 
 const WEB = path.join(__dirname, '..', 'app', 'src', 'main', 'assets', 'web');
 
+// 先把真实的 setTimeout 存下来：下面会把全局的掉成空实现（防止 toast 定时器
+// 把 node 的进程挂住），但测试本身需要真延时来等 Promise 链跑完。
+const realSetTimeout = setTimeout;
+
 // ---------------------------------------------------------------- DOM 桩
 
 function makeElement(tag) {
@@ -145,6 +149,16 @@ global.fetch = function (url, init) {
   if (url === '/api/status') return body({ version: '0.1.0', port: 8787, ips: ['192.168.1.7'], log: [] });
   if (url.indexOf('/api/calendar/') === 0) return body({ year: 2026, month: 11, days: {} });
   if (url.match(/^\/api\/instances\/\d+$/)) return body(DB.active[0]);
+  // 专门用来模拟一次 400，验证错误会被上报
+  if (url === '/api/items/101/toggle') {
+    return Promise.resolve({
+      status: 400,
+      text: () => Promise.resolve(JSON.stringify({
+        ok: false,
+        error: { code: 'BAD_REQUEST', message: '请求体不是合法 JSON' }
+      }))
+    });
+  }
   return body({});
 };
 
@@ -202,7 +216,7 @@ check('WebView 环境被识别', htmlEl.getAttribute('data-env') === 'wv',
 
 console.log('\n\x1b[1m首屏渲染（等异步）\x1b[0m');
 
-setImmediate(function () {
+setImmediate(async function () {
   const out = elements.app.innerHTML;
 
   check('渲染出今天的卡片', includes(out, '晨间例程'));
@@ -258,6 +272,18 @@ setImmediate(function () {
       '多发了请求：' + calls.slice(before).join(' | '));
   } catch (e) {
     check('回车处理正常', false, e.message);
+  }
+
+  console.log('\n\x1b[1m错误上报\x1b[0m');
+  try {
+    var before2 = calls.length;
+    click('toggle', { 'data-id': 101 });
+    // 等一拍：fetch 的 then/catch 是微任务，同步断言会跑在它前面
+    await new Promise(function (r) { realSetTimeout(r, 20); });
+    check('失败请求会 POST /api/log', calls.slice(before2).indexOf('POST /api/log') >= 0,
+      '实际请求：' + calls.slice(before2).join(' | '));
+  } catch (e) {
+    check('错误上报正常', false, e.message);
   }
 
   console.log('\n\x1b[1m设置页\x1b[0m');
