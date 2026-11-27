@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 图标底色。与 Web 端的 --accent 一致，桌面图标和界面是同一个绿 -->
+<!--
+    图标底色。与 Web 端的强调色一致，桌面图标和界面是同一个绿。
+
+    注意：XML 注释里不能出现连续两个减号（那是注释结束标记的一部分），
+    所以这里不写 CSS 变量名。aapt 会直接报
+    "The string is not permitted within comments"，而且报错行号指向的是注释本身，
+    很容易看漏。
+-->
 <resources>
     <color name="ic_launcher_background">#2F7D6A</color>
 </resources>
