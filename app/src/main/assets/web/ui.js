@@ -97,26 +97,33 @@
     } catch (e) { /* 上报失败就算了 */ }
   }
 
-  function req(method, path, body) {
+  /**
+   * 发请求。quiet 用于轮询：失败不弹 toast、不上报。
+   *
+   * 轮询每 5 秒一发，服务挂掉时会瞬间刷屏几十个 toast，
+   * 还会把同一条错误重复写几十行进 app.log，真正有用的信息反而被淹了。
+   * 用户主动操作（勾选、删除）才需要即时反馈。
+   */
+  function req(method, path, body, quiet) {
     return API[method](path, body).catch(function (e) {
-      // 把请求本身也报出来。光说"请求失败 400"没办法定位，
-      // 写清是哪个接口之后，看一次就知道问题在哪。
-      var where = method + ' ' + path;
-      toast((e.message || '请求失败') + ' · ' + where);
-      reportError(where, e.code, e.message);
+      if (!quiet) {
+        var where = method + ' ' + path;
+        toast((e.message || '请求失败') + ' · ' + where);
+        reportError(where, e.code, e.message);
+      }
       return null;
     });
   }
 
   // ------------------------------------------------------------ 数据
 
-  function loadToday() {
+  function loadToday(quiet) {
     // 一次取两批：进行中的，以及今天已经封装的。
     // 完成后的表会从 active 列表消失，如果不补这一批，界面会“凭空少一张”，
     // 用户不知道是完成了还是被删了。
-    return req('GET', '/api/instances/active').then(function (r) {
+    return req('GET', '/api/instances/active', null, quiet).then(function (r) {
       if (r) S.today = r;
-      return req('GET', '/api/instances/date/' + ymd(new Date()));
+      return req('GET', '/api/instances/date/' + ymd(new Date()), null, quiet);
     }).then(function (r2) {
       if (r2) {
         S.todayDone = r2.filter(function (x) { return x.status !== 'active'; });
@@ -129,20 +136,29 @@
     return JSON.stringify([S.today, S.todayDone]);
   }
 
-  function loadTemplates() {
-    return req('GET', '/api/templates').then(function (r) {
+  /** 设置页的指纹：模板 + 开关 + 运行日志（不含 serverTime 这类每次都变的字段）。 */
+  function settingsSig() {
+    return JSON.stringify([
+      S.templates,
+      S.settings,
+      (S.status && S.status.log) || []
+    ]);
+  }
+
+  function loadTemplates(quiet) {
+    return req('GET', '/api/templates', null, quiet).then(function (r) {
       if (r) S.templates = r;
     });
   }
 
-  function loadSettings() {
-    return req('GET', '/api/settings').then(function (r) {
+  function loadSettings(quiet) {
+    return req('GET', '/api/settings', null, quiet).then(function (r) {
       if (r) S.settings = r;
     });
   }
 
-  function loadStatus() {
-    return req('GET', '/api/status').then(function (r) {
+  function loadStatus(quiet) {
+    return req('GET', '/api/status', null, quiet).then(function (r) {
       if (r) S.status = r;
     });
   }
@@ -510,6 +526,15 @@
   }
 
   function newSheetModal() {
+    // 先拉一次模板再弹窗。
+    //
+    // 模板以前只在启动时和最本机改完之后刷新，所以如果刚在电脑上建了一个模板，
+    // 手机上点“新建检查表”看到的还是旧列表，会以为没建成功。
+    // 列表就几 KB，每次打开拉一下最省心；拉失败就先用缓存的那份。
+    loadTemplates().then(renderNewSheetModal);
+  }
+
+  function renderNewSheetModal() {
     var list = S.templates.map(function (t) {
       return '<button class="btn block" data-act="pick-template" data-id="' + t.id + '">' +
         esc(t.name) + '（' + t.items.length + ' 项）</button>';
@@ -542,6 +567,11 @@
   }
 
   function nextPickerModal() {
+    // 同上：不能拿启动时的快照当列表
+    loadTemplates().then(renderNextPickerModal);
+  }
+
+  function renderNextPickerModal() {
     var list = S.templates.map(function (t) {
       return '<button class="btn block" data-act="next-template" data-id="' + t.id + '">' +
         esc(t.name) + '（' + t.items.length + ' 项）</button>';
@@ -742,8 +772,9 @@
       }
 
       case 'refresh-log':
-        // 诊断区之前只在启动时拉一次，之后发生的错误根本不会出现。
-        loadStatus().then(function () { render(); toast('日志已刷新'); });
+        // 现在已经每 5 秒自动轮询了，这个按钮主要是给“我就要立刻看”的时候用。
+        // 手动点击要带反馈，所以这里不传 quiet：拉失败要能看见。
+        loadStatus().then(function (r) { render(); });
         break;
 
       case 'export': doExport(); break;
@@ -890,16 +921,29 @@
   setInterval(function () {
     if (document.hidden || S.modal) return;
     if (S.route.name === 'today') {
-      loadToday().then(function () {
+      // quiet：轮询失败不弹 toast、不写日志
+      loadToday(true).then(function () {
         var nowSig = sig();
         if (nowSig !== lastSig) { lastSig = nowSig; render(); }
       });
     } else if (S.route.name === 'detail' && S.detail) {
-      req('GET', '/api/instances/' + S.detail.id).then(function (r) {
+      req('GET', '/api/instances/' + S.detail.id, null, true).then(function (r) {
         if (!r) return;
         var was = JSON.stringify(S.detail);
         S.detail = r;
         if (JSON.stringify(r) !== was) render();
+      });
+    } else if (S.route.name === 'settings') {
+      // 设置页也要轮询。
+      // 这里原来根本没分支，所以模板、开关和运行日志都只在启动时读一次：
+      // 在电脑上改了模板，手机上不重启就永远看不到。
+      //
+      // 指纹特意只取 log 而不是整个 S.status：
+      // statusJson 里的 serverTime 每次都变，拿整个对象当指纹会每 5 秒白重绘一次，
+      // 用户正在看日志时会被反复重置滚动位置。
+      var before = settingsSig();
+      Promise.all([loadTemplates(true), loadSettings(true), loadStatus(true)]).then(function () {
+        if (settingsSig() !== before) render();
       });
     }
   }, 5000);

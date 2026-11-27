@@ -98,7 +98,10 @@ Object.defineProperty(global.location, 'hash', {
 });
 
 // Node 自带 webcrypto（global.crypto 也是只读 getter），ui.js 的 uid() 会回落到时间戳，无需替换
-global.setInterval = () => 0;
+// 把 setInterval 的回调捕下来，好在测试里手动触发一次轮询。
+// 之前直接 stub 成空函数，于是轮询逻辑（“模板不跟着刷新”那个 bug）完全没被测到。
+const intervals = [];
+global.setInterval = function (fn) { intervals.push(fn); return intervals.length; };
 global.setTimeout = () => 0;
 global.clearTimeout = () => {};
 global.URL.createObjectURL = () => 'blob:stub';
@@ -325,6 +328,39 @@ setImmediate(async function () {
       '实际 data-theme=' + htmlEl.getAttribute('data-theme'));
   } catch (e) {
     check('设置页渲染', false, e.message);
+  }
+
+  console.log('\n\x1b[1m设置页轮询\x1b[0m');
+  try {
+    check('注册了轮询定时器', intervals.length > 0);
+
+    hash = '#/settings';
+    listeners.hashchange();
+
+    // 模拟“另一端改了一个模板”：下次轮询应该拉到新名字
+    var beforePoll = calls.length;
+    var origFetch2 = global.fetch;
+    global.fetch = function (url, init) {
+      if (url === '/api/templates') {
+        calls.push('GET ' + url);
+        return body([{ id: 10, name: '远端新建的模板', items: [] }]);
+      }
+      return origFetch2(url, init);
+    };
+    intervals.forEach(function (fn) { fn(); });
+    await new Promise(function (r) { realSetTimeout(r, 30); });
+    global.fetch = origFetch2;
+
+    var polled = calls.slice(beforePoll);
+    check('轮询会拉模板', polled.indexOf('GET /api/templates') >= 0,
+      '实际请求：' + polled.join(' | '));
+    check('轮询会拉运行日志', polled.indexOf('GET /api/status') >= 0,
+      '实际请求：' + polled.join(' | '));
+    check('远端新建的模板渲染出来了',
+      includes(elements.app.innerHTML, '远端新建的模板'),
+      '界面里没有新模板名');
+  } catch (e) {
+    check('设置页轮询正常', false, e.message);
   }
 
   console.log('\n通过 ' + pass + ' 项，失败 ' + fail + ' 项\n');
