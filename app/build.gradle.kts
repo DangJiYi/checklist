@@ -6,6 +6,8 @@ plugins {
 android {
     namespace = "local.checklist"
     compileSdk = 34
+    // 钉住 build-tools，与 CI 里安装的版本一致；否则 AGP 默认会去找别的版本
+    buildToolsVersion = "34.0.0"
 
     defaultConfig {
         applicationId = "local.checklist"
