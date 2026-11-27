@@ -239,6 +239,27 @@ setImmediate(function () {
     check('手动完成流程正常', false, e.message);
   }
 
+  console.log('\n\x1b[1m回车不应在 textarea 里提交（否则第二行打不出来）\x1b[0m');
+  try {
+    hash = '#/settings';
+    listeners.hashchange();
+    click('tpl-new');
+    check('模板弹层已打开', includes(elements.app.innerHTML, '新建模板'));
+
+    var before = calls.length;
+    // 模拟在 textarea 里按回车：不能触发保存
+    listeners.keydown({ key: 'Enter', target: { tagName: 'TEXTAREA' }, isComposing: false });
+    check('textarea 里回车不保存', calls.length === before,
+      '多发了请求：' + calls.slice(before).join(' | '));
+
+    // 中文输入法正在组合候选词时，回车是确认词，不是提交
+    listeners.keydown({ key: 'Enter', target: { tagName: 'INPUT' }, isComposing: true });
+    check('输入法组合中的回车不提交', calls.length === before,
+      '多发了请求：' + calls.slice(before).join(' | '));
+  } catch (e) {
+    check('回车处理正常', false, e.message);
+  }
+
   console.log('\n\x1b[1m设置页\x1b[0m');
   try {
     hash = '#/settings';
@@ -247,6 +268,9 @@ setImmediate(function () {
     check('设置页渲染', includes(s, '允许修改已完成表'));
     check('有导出按钮', includes(s, 'data-act="export"'));
     check('显示访问地址', includes(s, '192.168.1.7:8787'));
+    // 令牌已按需求移除；界面上不该再出现任何令牌字样
+    check('设置页不再提令牌', !includes(s, '令牌'),
+      '仍出现“令牌”：' + String(s).replace(/[\s\S]*?(令牌[^<]{0,20})[\s\S]*/, '$1'));
   } catch (e) {
     check('设置页渲染', false, e.message);
   }

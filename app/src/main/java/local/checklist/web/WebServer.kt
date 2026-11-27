@@ -324,9 +324,19 @@ class WebServer(
                 St.OK, "text/html; charset=utf-8", ByteArrayInputStream(out), out.size.toLong()
             ).apply { addHeader("Cache-Control", "no-store") }
         }
+        // 静态资源也不再缓存。
+        //
+        // 这里曾经是 public, max-age=3600 配 ?v=__APP_VERSION__：
+        // 但版本号在两个构建之间不变，URL 就不变，浏览器于是继续用旧的 ui.js。
+        // 结果是服务端已经删了令牌，电脑上却还在显示令牌 UI——看起来像改没生效。
+        // 全部资源加起来不到 45 KB，局域网下每次重取的成本可以忽略，
+        // 用确定性换这点带宽值得。
         return NanoHTTPD.newFixedLengthResponse(
             St.OK, mimeOf(rel), ByteArrayInputStream(bytes), bytes.size.toLong()
-        ).apply { addHeader("Cache-Control", "public, max-age=3600") }
+        ).apply {
+            addHeader("Cache-Control", "no-store, must-revalidate")
+            addHeader("Pragma", "no-cache")
+        }
     }
 
     private fun mimeOf(rel: String): String = when (rel.substringAfterLast('.', "").lowercase()) {

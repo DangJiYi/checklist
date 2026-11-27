@@ -787,10 +787,24 @@
     }
   });
 
-  // 回车确认：弹层里有输入框时，回车等同点"确定"
+  // 回车确认：只在"单行输入"里把回车当提交。
+  //
+  // 之前这里没区分控件，模板弹层的 textarea 也被拦截了：
+  // 想按回车开第二行，结果直接被当成提交，模板只存下第一项。
+  // isComposing 也很关键：中文输入法用回车确认候选词，
+  // 不判它的话，正在打字的回车会被误当成提交。
   document.addEventListener('keydown', function (ev) {
-    if (ev.key !== 'Enter' || !S.modal) return;
-    var btn = document.querySelector('[data-act="confirm-yes"], [data-act="item-save"], [data-act="tpl-save"]');
+    if (ev.key !== 'Enter' || !S.modal || ev.isComposing) return;
+    var t = ev.target;
+    if (t && (t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    var btn = document.querySelector('[data-act="confirm-yes"], [data-act="item-save"]');
+    if (btn) btn.click();
+  });
+
+  // 模板弹层：保存按钮单独给键盘用（Ctrl/Cmd+Enter），不进全局回车逻辑
+  document.addEventListener('keydown', function (ev) {
+    if (!S.modal || !(ev.ctrlKey || ev.metaKey) || ev.key !== 'Enter') return;
+    var btn = document.querySelector('[data-act="tpl-save"]');
     if (btn) btn.click();
   });
 
