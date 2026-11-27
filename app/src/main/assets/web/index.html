@@ -6,6 +6,19 @@
 <meta name="theme-color" content="#12161c">
 <meta name="app-version" content="__APP_VERSION__">
 <title>每日检查表</title>
+<script>
+/* 主题必须在首次绘制前定下来，否则会先闪一帧白底再变暗。
+   所以这段内联在 head 里，不走外链脚本。 */
+(function () {
+  var mode = 'auto';
+  try { mode = localStorage.getItem('cl.theme') || 'auto'; } catch (e) {}
+  var dark = mode === 'dark';
+  if (mode === 'auto') {
+    dark = !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  }
+  document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+})();
+</script>
 <link rel="stylesheet" href="app.css?v=__APP_VERSION__">
 </head>
 <body>

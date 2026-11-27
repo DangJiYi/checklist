@@ -69,5 +69,28 @@ required.forEach(function (r) {
   else bad('缺少规则：' + r[1] + '（匹配 ' + r[0] + '）');
 });
 
-console.log('\n' + (fail === 0 ? 'CSS 检查通过' : 'CSS 检查失败 ' + fail + ' 项'));
+// 变量必须都有定义：var(--x) 指向不存在的 --x 时，浏览器不报错，
+// 只是那个属性默默失效（背景变透明/颜色变黑），很难查。
+const defined = new Set();
+(stripped.match(/--[a-z0-9-]+\s*:/g) || []).forEach(function (m) {
+  defined.add(m.replace(/\s*:$/, '').trim());
+});
+const used = new Set();
+let mm;
+const reVar = /var\((--[a-z0-9-]+)/g;
+while ((mm = reVar.exec(stripped)) !== null) used.add(mm[1]);
+
+const missing = Array.from(used).filter(function (v) { return !defined.has(v); });
+if (missing.length === 0) {
+  ok('变量引用完整（' + used.size + ' 个）');
+} else {
+  bad('引用了未定义的变量：' + missing.join(', '));
+}
+
+// 夜间主题必须存在，且两套主题定义的变量集合要一致
+if (/html\[data-theme="dark"\]/.test(stripped)) ok('存在夜间主题块');
+else bad('缺少 html[data-theme="dark"] 块');
+
+if (fail === 0) console.log('');
+console.log(fail === 0 ? 'CSS 检查通过' : 'CSS 检查失败 ' + fail + ' 项');
 process.exit(fail === 0 ? 0 : 1);

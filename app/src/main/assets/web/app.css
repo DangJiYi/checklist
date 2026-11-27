@@ -5,17 +5,84 @@
    ------------------------------------------------------------------ */
 
 :root {
+  color-scheme: light;
   --ink: #1d2229;
   --ink-soft: #5c6672;
   --ink-faint: #97a1ad;
   --paper: #fbf8f1;
   --paper-edge: #ece5d7;
   --accent: #2f7d6a;
+  --accent-strong: #276b5b;
   --accent-soft: #e2efe9;
   --warn: #b4552f;
   --bg: #0f1319;
   --bg-2: #161c24;
   --radius: 18px;
+
+  /* 控件颜色单独抽出来：夜间主题只改这几个值就能整体变暗 */
+  --btn-bg: #ffffff;
+  --btn-border: #d6cebd;
+  --btn-hover: #f4efe4;
+  --field-bg: #ffffff;
+  --sunken: #f3eee2;
+  --track: #e8e1d3;
+  --box-border: #cdc5b3;
+  --box-off: #d8d0bf;
+  --cell-bg: rgba(0, 0, 0, .04);
+  --sheen: rgba(255, 255, 255, .55);
+  --shadow: rgba(0, 0, 0, .45);
+  /* 顶栏两种底色：桌面是浮在深底上的半透明条，手机是纸张色的一条。
+     用一个变量表达不了，拆成两个再由媒体查询选。 */
+  --topbar-wide: rgba(15, 19, 25, .92);
+  --topbar-narrow: rgba(251, 248, 241, .95);
+  --topbar-ink: #cfd8e3;
+  --topbar-tab: #8e9aa8;
+  /* 已完成表上的日期戳章 */
+  --stamp-border: rgba(47, 125, 106, .55);
+  --stamp-ink: rgba(47, 125, 106, .8);
+  /* 主色上的前景（徽章文字、勾选符）：浅色主题下主色深，用白字 */
+  --on-accent: #ffffff;
+}
+
+/*
+  夜间主题。
+
+  不是简单地把所有颜色反转：纸卡片变成深石板色，戳章/徽章的绿色加深一挡，
+  否则亮绿在深底上会刺眼。--bg 与 --paper 的亮度差保持在“卡片能看出边缘”的程度。
+*/
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --ink: #e4ebf2;
+  --ink-soft: #a3aeba;
+  --ink-faint: #6f7b88;
+  --paper: #1a2029;
+  --paper-edge: #2a323d;
+  --accent: #4fbfa0;
+  --accent-strong: #3f9d84;
+  --accent-soft: #1c3a33;
+  --warn: #e08a66;
+  --bg: #0a0d12;
+  --bg-2: #11161d;
+
+  --btn-bg: #202832;
+  --btn-border: #333d49;
+  --btn-hover: #27313d;
+  --field-bg: #161c24;
+  --sunken: #151b22;
+  --track: #2a323d;
+  --box-border: #414d5c;
+  --box-off: #3a4553;
+  --cell-bg: rgba(255, 255, 255, .06);
+  --sheen: rgba(255, 255, 255, .06);
+  --shadow: rgba(0, 0, 0, .6);
+  --topbar-wide: rgba(10, 13, 18, .92);
+  --topbar-narrow: rgba(26, 32, 41, .95);
+  --topbar-ink: #c6d0da;
+  --topbar-tab: #78848f;
+  /* 夜间主色变亮了，仍用白字会发糊，换成深墨色 */
+  --stamp-border: rgba(79, 191, 160, .45);
+  --stamp-ink: rgba(79, 191, 160, .85);
+  --on-accent: #07130f;
 }
 
 * { box-sizing: border-box; }
@@ -64,7 +131,7 @@ a { color: inherit; text-decoration: none; }
   align-items: center;
   gap: 16px;
   padding: 12px 20px;
-  background: rgba(15, 19, 25, .92);
+  background: var(--topbar-wide);
   backdrop-filter: blur(8px);
   border-bottom: 1px solid rgba(255, 255, 255, .06);
 }
@@ -72,7 +139,7 @@ a { color: inherit; text-decoration: none; }
 .brand {
   font-size: 14px;
   letter-spacing: .12em;
-  color: #cfd8e3;
+  color: var(--topbar-ink);
   white-space: nowrap;
 }
 
@@ -82,11 +149,11 @@ a { color: inherit; text-decoration: none; }
   padding: 6px 14px;
   border-radius: 999px;
   font-size: 14px;
-  color: #8e9aa8;
+  color: var(--topbar-tab);
   border: 1px solid transparent;
 }
 
-.tab:hover { color: #cfd8e3; }
+.tab:hover { color: var(--topbar-ink); }
 
 .tab.on {
   color: #0f1319;
@@ -131,7 +198,7 @@ a { color: inherit; text-decoration: none; }
   background: var(--paper);
   border-radius: var(--radius);
   padding: 26px 24px 20px;
-  box-shadow: 0 18px 44px rgba(0, 0, 0, .45), 0 1px 0 rgba(255, 255, 255, .6) inset;
+  box-shadow: 0 18px 44px var(--shadow), 0 1px 0 var(--sheen) inset;
   overflow: hidden;
 }
 
@@ -180,7 +247,7 @@ button.sheet-head:hover .date { color: var(--accent); }
   border-radius: 999px;
   font-size: 12px;
   font-weight: 600;
-  color: #fff;
+  color: var(--on-accent);
   background: var(--accent);
 }
 
@@ -213,7 +280,7 @@ button.sheet-head:hover .date { color: var(--accent); }
   height: 26px;
   padding: 0;
   border-radius: 50%;
-  border: 2px solid #cdc5b3;
+  border: 2px solid var(--box-border);
   background: transparent;
   display: grid;
   place-items: center;
@@ -227,7 +294,7 @@ button.sheet-head:hover .date { color: var(--accent); }
   width: 15px;
   height: 15px;
   fill: none;
-  stroke: #fff;
+  stroke: var(--on-accent);
   stroke-width: 2.8;
   stroke-linecap: round;
   stroke-linejoin: round;
@@ -247,7 +314,7 @@ button.sheet-head:hover .date { color: var(--accent); }
 .item.on .nm {
   color: var(--ink-faint);
   text-decoration: line-through;
-  text-decoration-color: rgba(47, 125, 106, .5);
+  text-decoration-color: var(--stamp-border);
 }
 
 /* ---------------------------------------------------------- 底部进度 */
@@ -257,7 +324,7 @@ button.sheet-head:hover .date { color: var(--accent); }
 .bar {
   height: 4px;
   border-radius: 2px;
-  background: #e8e1d3;
+  background: var(--track);
   overflow: hidden;
 }
 
@@ -287,8 +354,8 @@ button.sheet-head:hover .date { color: var(--accent); }
 /* ---------------------------------------------------------- 按钮 */
 
 .btn {
-  border: 1px solid #d6cebd;
-  background: #fff;
+  border: 1px solid var(--btn-border);
+  background: var(--btn-bg);
   color: var(--ink);
   padding: 8px 16px;
   border-radius: 10px;
@@ -296,17 +363,17 @@ button.sheet-head:hover .date { color: var(--accent); }
   transition: background .12s, border-color .12s;
 }
 
-.btn:hover { background: #f4efe4; }
+.btn:hover { background: var(--btn-hover); }
 
 .btn:disabled { opacity: .45; cursor: not-allowed; }
 
 .btn.primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
 }
 
-.btn.primary:hover { background: #276b5b; }
+.btn.primary:hover { background: var(--accent-strong); }
 
 .btn.small { padding: 6px 13px; font-size: 13px; }
 
@@ -330,9 +397,9 @@ button.sheet-head:hover .date { color: var(--accent); }
 
 .sheet.locked {
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, .55), rgba(255, 255, 255, 0) 42%),
+    linear-gradient(180deg, var(--sheen), rgba(255, 255, 255, 0) 42%),
     var(--paper);
-  box-shadow: 0 18px 44px rgba(0, 0, 0, .5), 0 0 0 1px rgba(0, 0, 0, .05) inset;
+  box-shadow: 0 18px 44px var(--shadow), 0 0 0 1px rgba(0, 0, 0, .05) inset;
 }
 
 .sheet.locked .box {
@@ -348,9 +415,9 @@ button.sheet-head:hover .date { color: var(--accent); }
   bottom: 58px;
   transform: rotate(-7deg);
   padding: 6px 12px;
-  border: 2px solid rgba(47, 125, 106, .55);
+  border: 2px solid var(--stamp-border);
   border-radius: 8px;
-  color: rgba(47, 125, 106, .8);
+  color: var(--stamp-ink);
   font-size: 11px;
   line-height: 1.35;
   letter-spacing: .1em;
@@ -418,6 +485,7 @@ button.sheet-head:hover .date { color: var(--accent); }
 
 .cal-grid .cell.today {
   border-color: var(--accent);
+  /* 这里的字坐在深色日历底上（两套主题都是深底），不能用 --on-accent */
   color: #fff;
 }
 
@@ -446,7 +514,7 @@ button.sheet-head:hover .date { color: var(--accent); }
     color: var(--ink);
   }
   .cal-grid .cell {
-    background: rgba(0, 0, 0, .04);
+    background: var(--cell-bg);
     color: var(--ink);
   }
   .cal-grid .cell.today { border-color: var(--accent); color: var(--accent); }
@@ -483,7 +551,7 @@ button.sheet-head:hover .date { color: var(--accent); }
   margin-bottom: 8px;
   border: 1px solid var(--paper-edge);
   border-radius: 12px;
-  background: #fff;
+  background: var(--btn-bg);
   cursor: pointer;
 }
 
@@ -533,7 +601,7 @@ button.sheet-head:hover .date { color: var(--accent); }
   height: 26px;
   border-radius: 13px;
   border: 0;
-  background: #d8d0bf;
+  background: var(--box-off);
   cursor: pointer;
   transition: background .15s;
 }
@@ -554,21 +622,52 @@ button.sheet-head:hover .date { color: var(--accent); }
 .switch.on { background: var(--accent); }
 .switch.on::after { transform: translateX(20px); }
 
+/* 主题选择用的分段按钮 */
+.seg {
+  display: flex;
+  gap: 4px;
+  margin-top: 10px;
+  padding: 4px;
+  border-radius: 12px;
+  background: var(--sunken);
+}
+
+.seg-btn {
+  flex: 1;
+  padding: 9px 6px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background .12s, color .12s;
+}
+
+.seg-btn:hover { color: var(--ink); }
+
+.seg-btn.on {
+  background: var(--btn-bg);
+  color: var(--ink);
+  font-weight: 600;
+  box-shadow: 0 1px 3px var(--shadow);
+}
+
 .addr {
   font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
   font-size: 13px;
   word-break: break-all;
-  background: #f3eee2;
+  background: var(--sunken);
   border-radius: 10px;
   padding: 10px 12px;
   margin: 8px 0 0;
-  color: #2a4a41;
+  color: var(--accent);
 }
 
 pre.log {
   font-size: 11px;
   line-height: 1.5;
-  background: #f3eee2;
+  background: var(--sunken);
   border-radius: 10px;
   padding: 10px 12px;
   max-height: 220px;
@@ -622,10 +721,10 @@ pre.log {
 .modal input[type=text],
 .modal textarea {
   width: 100%;
-  border: 1px solid #d6cebd;
+  border: 1px solid var(--btn-border);
   border-radius: 10px;
   padding: 10px 12px;
-  background: #fff;
+  background: var(--field-bg);
   margin-bottom: 10px;
 }
 
@@ -655,14 +754,14 @@ pre.log {
 /* ---------------------------------------------------------- 手机铺满 */
 
 @media (max-width: 899px) {
-  /* 两个都要改：只改 body 的话，回弹时露出 html 的深色 */
+  /* 两个都要改：只改 body 的话，回弹时露出 html 的深色。
+     颜色一律取变量，主题切换时这里不用再改。 */
   html, body {
     background: var(--paper);
-    color-scheme: light;
   }
 
   .topbar {
-    background: rgba(251, 248, 241, .95);
+    background: var(--topbar-narrow);
     border-bottom: 1px solid var(--paper-edge);
     padding: 10px 14px;
     padding-top: calc(10px + env(safe-area-inset-top));

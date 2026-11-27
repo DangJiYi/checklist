@@ -42,8 +42,17 @@ class WebServer(
 
     // ------------------------------------------------------------ 入口
 
+    /**
+     * 当前请求的路径，只为日志服务。
+     *
+     * NanoHTTPD 一个请求一个线程，所以用 ThreadLocal 而不是普通字段：
+     * 普通字段在并发下会被其他请求覆盖，日志里就会出现“串台”。
+     */
+    private val currentPath = ThreadLocal<String>()
+
     override fun serve(session: NanoHTTPD.IHTTPSession): Resp {
         val path = (session.uri ?: "/").substringBefore('?')
+        currentPath.set("${session.method} $path")
         return try {
             when {
                 // 健康检查不包 data 层：MainActivity 的探测直接读顶层 app 字段，
@@ -56,6 +65,7 @@ class WebServer(
                 else -> staticFile(path)
             }
         } catch (e: BadRequest) {
+            AppLog.w("http", "BAD_REQUEST ${session.method} $path - ${e.message}")
             json(St.BAD_REQUEST, errorBody("BAD_REQUEST", e.message ?: "请求格式错误"))
         } catch (e: Exception) {
             AppLog.w("http", "${session.method} $path -> ${AppLog.brief(e)}")
@@ -355,7 +365,13 @@ class WebServer(
 
     private fun <T> reply(r: RepoResult<T>, toJson: (T) -> Any): Resp = when (r) {
         is RepoResult.Ok -> ok(toJson(r.value))
-        is RepoResult.Err -> json(statusFor(r.code), errorBody(r.code, r.message))
+        is RepoResult.Err -> {
+            // 业务拒绝（比如 400/409）也记一笔。
+            // 这些不是异常，不会进 catch 分支；界面上只看到“请求失败 400”，
+            // 而 app.log 里能直接看到是哪个接口、什么原因。
+            AppLog.w("http", "${r.code} ${currentPath.get() ?: "?"} - ${r.message}")
+            json(statusFor(r.code), errorBody(r.code, r.message))
+        }
     }
 
     private fun statusFor(code: String): St = when (code) {

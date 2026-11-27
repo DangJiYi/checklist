@@ -271,6 +271,14 @@ setImmediate(function () {
     // 令牌已按需求移除；界面上不该再出现任何令牌字样
     check('设置页不再提令牌', !includes(s, '令牌'),
       '仍出现“令牌”：' + String(s).replace(/[\s\S]*?(令牌[^<]{0,20})[\s\S]*/, '$1'));
+
+    check('有主题选项', includes(s, 'data-act="set-theme"') && includes(s, '深色'));
+    click('set-theme', { 'data-mode': 'dark' });
+    check('选深色后 html[data-theme] 生效', htmlEl.getAttribute('data-theme') === 'dark',
+      '实际 data-theme=' + htmlEl.getAttribute('data-theme'));
+    click('set-theme', { 'data-mode': 'light' });
+    check('选浅色后切回 light', htmlEl.getAttribute('data-theme') === 'light',
+      '实际 data-theme=' + htmlEl.getAttribute('data-theme'));
   } catch (e) {
     check('设置页渲染', false, e.message);
   }

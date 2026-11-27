@@ -26,7 +26,28 @@
 
   var lastSig = '';
 
+  // 主题存在本机（localStorage），不进数据库：
+  // 手机想晚上暗一点、电脑想白天亮一点，两边各管各的才对。
+  var THEME_KEY = 'cl.theme';
+
   // ------------------------------------------------------------ 工具
+
+  function themeMode() {
+    try { return localStorage.getItem(THEME_KEY) || 'auto'; } catch (e) { return 'auto'; }
+  }
+
+  function applyTheme(mode) {
+    var m = mode === 'light' || mode === 'dark' ? mode : 'auto';
+    var dark = m === 'dark';
+    if (m === 'auto') {
+      dark = !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    }
+    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+    try { localStorage.setItem(THEME_KEY, m); } catch (e) { /* 隐私模式 */ }
+    // 让状态栏/地址栏的底色跟着走，不然暗色页面配浅色状态栏很割裂
+    var meta = document.querySelector && document.querySelector('meta[name=theme-color]');
+    if (meta && meta.setAttribute) meta.setAttribute('content', dark ? '#0a0d12' : '#fbf8f1');
+  }
 
   function esc(v) {
     return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) {
@@ -60,7 +81,14 @@
 
   function req(method, path, body) {
     return API[method](path, body).catch(function (e) {
-      toast(e.message || '请求失败');
+      // 把请求本身也报出来。光说"请求失败 400"没办法定位，
+      // 写清是哪个接口之后，看一次就知道问题在哪。
+      var where = method + ' ' + path;
+      toast((e.message || '请求失败') + ' · ' + where);
+      // console.error 会被 WebChromeClient 收进 app.log，设置页能看
+      if (window.console && console.error) {
+        console.error('[api] ' + where + ' -> ' + (e.code || '?') + ' ' + (e.message || ''));
+      }
       return null;
     });
   }
@@ -366,7 +394,23 @@
 
     var log = (info.log || []).join('\n');
 
+    var theme = themeMode();
+
     return '<div class="sheet">' +
+        '<h2 style="margin:0 0 8px;font-size:17px">外观</h2>' +
+        '<div class="field" style="border-bottom:0;padding-bottom:0">' +
+          '<span class="label">主题' +
+            '<span class="sub">跟随系统时会随手机的深色模式自动切</span>' +
+          '</span>' +
+        '</div>' +
+        '<div class="seg" role="group" aria-label="主题">' +
+          '<button class="seg-btn' + (theme === 'auto' ? ' on' : '') + '" data-act="set-theme" data-mode="auto">跟随系统</button>' +
+          '<button class="seg-btn' + (theme === 'light' ? ' on' : '') + '" data-act="set-theme" data-mode="light">浅色</button>' +
+          '<button class="seg-btn' + (theme === 'dark' ? ' on' : '') + '" data-act="set-theme" data-mode="dark">深色</button>' +
+        '</div>' +
+      '</div>' +
+
+      '<div class="sheet">' +
         '<h2 style="margin:0 0 8px;font-size:17px">行为</h2>' +
         '<div class="field">' +
           '<span class="label">允许修改已完成表' +
@@ -732,6 +776,12 @@
         });
         break;
 
+      case 'set-theme': {
+        applyTheme(el.getAttribute('data-mode'));
+        render();
+        break;
+      }
+
       case 'toggle-allow': {
         var next = !S.settings.allowEditCompleted;
         req('PUT', '/api/settings', { allow_edit_completed: next ? '1' : '0' }).then(function (r) {
@@ -877,6 +927,19 @@
       render();
     }
   });
+
+  // 系统深色模式变化时，只在"跟随系统"下重新算；手动选的不动。
+  if (window.matchMedia) {
+    try {
+      var mq = window.matchMedia('(prefers-color-scheme: dark)');
+      var onChange = function () { if (themeMode() === 'auto') applyTheme('auto'); };
+      if (mq.addEventListener) mq.addEventListener('change', onChange);
+      else if (mq.addListener) mq.addListener(onChange);
+    } catch (e) { /* 老WebView 没有匹配 API，忽略 */ }
+  }
+
+  // 内联脚本已经定了首帧的颜色；这里再跑一次是为了同步 meta theme-color
+  applyTheme(themeMode());
 
   S.route = parseRoute();
   boot();
