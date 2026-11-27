@@ -1,0 +1,20 @@
+# Gradle / Android
+.gradle/
+build/
+app/build/
+local.properties
+*.iml
+.idea/
+captures/
+.cxx/
+.externalNativeBuild/
+release/
+*.apk.bak
+
+# 签名材料，永不入库
+*.jks
+*.keystore
+
+# 系统杂物
+.DS_Store
+Thumbs.db

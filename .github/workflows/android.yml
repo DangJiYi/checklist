@@ -1,0 +1,101 @@
+name: android
+
+# 每次推送到 main 都跑：单测 → 打包 → 校验 APK 内容 → 报体积 → 上传产物。
+# 校验放在这里而不是放在本地手工步骤里，因为"打出一个白屏 APK 但构建全绿"
+# 是最容易蒙混过去的一类故障。
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: SDK packages
+        run: sdkmanager --install "platforms;android-34" "build-tools;34.0.0"
+
+      # 仓库里没有 gradle-wrapper.jar（二进制不便入库），所以由 CI 提供 Gradle。
+      # 本地要构建的话：gradle assembleDebug，或先跑一次 gradle wrapper 生成 wrapper。
+      - name: Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Unit tests (StateMachine)
+        run: gradle --no-daemon --console=plain testDebugUnitTest
+
+      - name: Assemble debug APK
+        run: gradle --no-daemon --console=plain assembleDebug
+
+      - name: Verify APK contents
+        run: |
+          set -euo pipefail
+          APK=$(ls app/build/outputs/apk/debug/*.apk | head -1)
+          echo "APK: $APK"
+          echo "--- assets ---"
+          unzip -l "$APK" | grep -E 'assets/web/(index\.html|app\.css|api\.js|ui\.js)' || {
+            echo "::error::APK 里缺少前端资源，打出来的会是白屏"
+            exit 1
+          }
+          echo "--- dex ---"
+          unzip -l "$APK" | grep -E 'classes.*\.dex' || {
+            echo "::error::APK 里没有 dex"
+            exit 1
+          }
+          echo "--- manifest ---"
+          unzip -l "$APK" | grep -q 'AndroidManifest.xml' || {
+            echo "::error::APK 里没有 manifest"
+            exit 1
+          }
+
+      - name: Report size
+        run: |
+          set -euo pipefail
+          APK=$(ls app/build/outputs/apk/debug/*.apk | head -1)
+          BYTES=$(stat -c%s "$APK")
+          HUMAN=$(printf '%.2f MB' "$(echo "$BYTES / 1048576" | bc -l)")
+          echo "APK size: $BYTES bytes ($HUMAN)"
+          echo "### APK 体积：$HUMAN（$BYTES bytes）" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- 这是 **debug** 包，未启用 R8，kotlin-stdlib 全量在内。" >> "$GITHUB_STEP_SUMMARY"
+          echo "- 目标是 release + R8 后进入 1 MB 以内。" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$BYTES" -gt 25165824 ]; then
+            echo "::error::APK 超过 24 MB 上限（$HUMAN）"
+            exit 1
+          fi
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: checklist-debug
+          path: app/build/outputs/apk/debug/*.apk
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Upload test report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report
+          path: app/build/reports/tests/
+          retention-days: 7
+          if-no-files-found: ignore
