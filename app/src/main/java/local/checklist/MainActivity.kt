@@ -11,6 +11,8 @@ import android.os.Bundle
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.webkit.ConsoleMessage
+import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
@@ -127,6 +129,15 @@ class MainActivity : Activity() {
                             "点“重试”重新连接本地服务。"
                         )
                     }
+                }
+            }
+            // 前端 JS 的报错在 WebView 里是静默的，用户只会觉得“点了没反应”。
+            // 收进 app.log，设置页的诊断区能看到，不用连 logcat。
+            webChromeClient = object : WebChromeClient() {
+                override fun onConsoleMessage(msg: ConsoleMessage): Boolean {
+                    val tag = if (msg.messageLevel() == ConsoleMessage.MessageLevel.ERROR) "js-error" else "js"
+                    AppLog.w(tag, "${msg.message()} @${msg.sourceId()}:${msg.lineNumber()}")
+                    return true
                 }
             }
         }

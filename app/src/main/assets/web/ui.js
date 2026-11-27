@@ -395,14 +395,31 @@
     '</div></div>';
   }
 
-  function openModal(html) {
-    S.modal = { html: html };
+  function openModal(html, onYes) {
+    S.modal = { html: html, onYes: onYes || null };
     render();
   }
 
   function closeModal() {
     S.modal = null;
     render();
+  }
+
+  /**
+   * 自绘确认框。
+   *
+   * 不用 window.confirm：WebView 没设 WebChromeClient 时它恒返回 false，
+   * 表现就是“点删除毫无反应”——而且这个失败是静默的。
+   * 顺带的好处是两端观感一致，不再是系统弹框盖在纸卡片上。
+   */
+  function askConfirm(title, body, yesText, onYes) {
+    openModal(
+      '<h3>' + esc(title) + '</h3>' +
+      '<p>' + esc(body) + '</p>' +
+      '<button class="btn danger block" data-act="confirm-yes">' + esc(yesText) + '</button>' +
+      '<button class="btn ghost block" data-act="close">取消</button>',
+      onYes
+    );
   }
 
   function newSheetModal() {
@@ -503,18 +520,28 @@
   }
 
   function doDelete(id) {
-    if (!window.confirm('删除整张检查表？该操作不可撤销。')) return;
-    req('DELETE', '/api/instances/' + id).then(function (r) {
-      if (r == null) return;
-      S.detail = null;
-      loadToday().then(function () { navigate('#/today'); });
-    });
+    askConfirm(
+      '删除这张检查表？',
+      '整张表会连同勾选记录一起消失，不可撤销。',
+      '删除整张表',
+      function () {
+        req('DELETE', '/api/instances/' + id).then(function (r) {
+          if (r == null) return;
+          S.detail = null;
+          loadToday().then(function () { navigate('#/today'); });
+        });
+      }
+    );
   }
 
   function doAddItem(id) {
-    var name = window.prompt('检查项名称');
-    if (!name || !name.trim()) return;
-    req('POST', '/api/instances/' + id + '/items', { name: name.trim() }).then(applyInstance);
+    openModal(
+      '<h3>添加检查项</h3>' +
+      '<p>这项会追加到列表末尾。已完成或锁定的表不允许添加。</p>' +
+      '<input type="text" id="item-name" placeholder="例如：喝水 200ml" autocomplete="off">' +
+      '<button class="btn primary block" data-act="item-save" data-id="' + id + '">添加</button>' +
+      '<button class="btn ghost block" data-act="close">取消</button>'
+    );
   }
 
   function saveTemplate(idText) {
@@ -553,6 +580,24 @@
 
     switch (act) {
       case 'close': closeModal(); break;
+
+      // 自绘确认框的"确定"。回调存在 S.modal.onYes 里，
+      // 先关弹层再执行，避免回调里再调 render 时和残留的 modal 打架。
+      case 'confirm-yes': {
+        var fn = S.modal && S.modal.onYes;
+        closeModal();
+        if (typeof fn === 'function') fn();
+        break;
+      }
+
+      case 'item-save': {
+        var nameEl = document.getElementById('item-name');
+        var itemName = nameEl ? nameEl.value.trim() : '';
+        if (!itemName) { toast('请输入名称'); break; }
+        closeModal();
+        req('POST', '/api/instances/' + id + '/items', { name: itemName }).then(applyInstance);
+        break;
+      }
 
       case 'save-token': {
         var input = document.getElementById('gate-token');
@@ -634,14 +679,19 @@
 
       case 'tpl-save': saveTemplate(el.getAttribute('data-id')); break;
 
-      case 'tpl-del': {
-        if (!window.confirm('删除模板？已生成的检查表不受影响。')) return;
-        req('DELETE', '/api/templates/' + id).then(function (r) {
-          if (r == null) return;
-          loadTemplates().then(render);
-        });
+      case 'tpl-del':
+        askConfirm(
+          '删除模板？',
+          '已生成的检查表不受影响——它们保存的是生成时的快照。以后想用就再也找不回来了。',
+          '删除模板',
+          function () {
+            req('DELETE', '/api/templates/' + id).then(function (r) {
+              if (r == null) return;
+              loadTemplates().then(render);
+            });
+          }
+        );
         break;
-      }
 
       case 'next-same': {
         var a = S.after;

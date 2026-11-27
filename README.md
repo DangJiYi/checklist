@@ -9,21 +9,20 @@
 
 ## 当前状态
 
-**代码已写完，尚未在任何设备上编译或运行过。**
-
-本机没有 Android SDK 和 Gradle，所以第一次编译由 GitHub Actions 完成。
-第一次构建的结果决定下面这份"未验证清单"里哪些能划掉：
+已能构建并在真机上跑起来，但只在手机上验证过主流程。剩余未验证项见下表。
 
 | 项 | 状态 |
 | :--- | :--- |
-| Kotlin 能编译通过 | 未验证 |
-| 单元测试（StateMachine 15 项）通过 | 未验证 |
-| APK 内含 `assets/web/*` | CI 里断言 |
-| WebView 能加载本地页面 | 未验证 |
+| Kotlin 能编译通过 | ✅ CI |
+| 单元测试（StateMachine 15 项）通过 | ✅ CI |
+| APK 内含 `assets/web/*` | ✅ CI 断言 |
+| WebView 能加载本地页面 | ✅ 真机 |
+| 中文模板不再乱码 | ⏳ 待验证（请求体改为强制 UTF-8 解码） |
+| 删除模板/整表 | ⏳ 待验证（改用自绘确认框，不再依赖 `window.confirm`） |
 | 电脑端能访问 | 未验证 |
 | 熄屏后 Wi-Fi 仍在线 | 未验证 |
 | 锁规则在后端真的拒绝（409） | 未跑过 curl 冒烟 |
-| APK 体积 | 未测；debug 包未开 R8 |
+| APK 体积 | 未记录 |
 
 ## 构建
 
@@ -97,6 +96,12 @@ app/src/test/              纯 JVM 单测
 - **实例项是模板的快照复制**，改模板不影响历史记录。
 - **`usesCleartextTraffic="true"`** 是硬需求，且刻意不用 `network-security-config` 的 `<domain>`
   （它只认主机名，写 IP 会被静默忽略，是"打开全空白"的经典成因）。
+- **请求体自己按 UTF-8 读**，不走 NanoHTTPD 的 `parseBody`。它用 Content-Type 里的 charset
+  解码，且那个 ContentType 对象在 `serve()` 之前就构造好了，事后改 header 没用；
+  客户端漏写 charset 时会按 US-ASCII 解，中文变成 U+FFFD 且不可逆。
+- **不用 `window.confirm` / `window.prompt`**。WebView 没设 `WebChromeClient` 时
+  `confirm()` 恒返回 false、`prompt()` 恒返回 null，表现就是"点删除毫无反应"，
+  而且完全静默。所有确认框都用页面内自绘的 modal。
 
 ## 已知边界
 

@@ -46,7 +46,9 @@
     if (t) headers['X-List-Token'] = t;
     var init = { method: method, headers: headers, cache: 'no-store' };
     if (body !== undefined && body !== null) {
-      headers['Content-Type'] = 'application/json';
+      // charset 不能省：NanoHTTPD 的 parseBody 用 Content-Type 里的编码解码请求体，
+      // 不带 charset 时它回落到 US-ASCII，中文会被解成乱码且不可逆。
+      headers['Content-Type'] = 'application/json; charset=utf-8';
       init.body = JSON.stringify(body);
     }
 

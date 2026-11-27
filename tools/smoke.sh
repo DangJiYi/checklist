@@ -23,7 +23,8 @@ if [ -z "$BASE" ]; then
 fi
 TOKEN="${2:-${TOKEN:-}}"
 
-H=(-H "Content-Type: application/json")
+# charset 必须显式写：NanoHTTPD 不带 charset 时按 US-ASCII 解码，中文会变乱码
+H=(-H "Content-Type: application/json; charset=utf-8")
 [ -n "$TOKEN" ] && H+=(-H "X-List-Token: $TOKEN")
 
 fails=0

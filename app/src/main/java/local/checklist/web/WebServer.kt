@@ -38,6 +38,7 @@ class WebServer(
 
     companion object {
         private const val JSON_MIME = "application/json; charset=utf-8"
+        private const val MAX_BODY_BYTES = 1 shl 20
         private val LOOPBACK = setOf("127.0.0.1", "::1", "0:0:0:0:0:0:0:1", "localhost")
     }
 
@@ -419,21 +420,49 @@ class WebServer(
 
     // ------------------------------------------------------------ 请求解析
 
+    /**
+     * 请求体一律按 UTF-8 读原始字节，不走 session.parseBody。
+     *
+     * NanoHTTPD 的 parseBody 用 Content-Type 里的 charset 解码 body，
+     * 而那个 ContentType 对象在 execute() 里、进 serve() 之前就已经构造好了，
+     * 在这里改 header 已经晚了。客户端漏写 charset 时它回落到 US-ASCII，
+     * 中文会被解成 U+FFFD——字节已经丢了，事后无法补救。
+     *
+     * 所以直接按 content-length 读原始字节再自己 UTF-8 解码，
+     * 不依赖客户端声明。本应用的请求体只有 JSON，这条路径够了。
+     */
     private fun readBody(session: NanoHTTPD.IHTTPSession): String {
         if (session.method == NanoHTTPD.Method.GET || session.method == NanoHTTPD.Method.HEAD) return ""
+        val len = session.headers["content-length"]?.trim()?.toIntOrNull() ?: return ""
+        if (len <= 0) return ""
+        if (len > MAX_BODY_BYTES) throw BadRequest("请求体过大")
+
         return try {
-            val files = HashMap<String, String>()
-            session.parseBody(files)
-            files["postData"] ?: ""
+            val buf = ByteArray(len)
+            val input = session.inputStream
+            var off = 0
+            while (off < len) {
+                val n = input.read(buf, off, len - off)
+                if (n < 0) break
+                off += n
+            }
+            String(buf, 0, off, Charsets.UTF_8)
         } catch (_: Exception) {
             ""
         }
     }
 
-    private fun parseJson(body: String): JSONObject = try {
-        if (body.isBlank()) JSONObject() else JSONObject(body)
-    } catch (_: Exception) {
-        throw BadRequest("请求体不是合法 JSON")
+    private fun parseJson(body: String): JSONObject {
+        // 最后一道闸：已经变成替换字符的请求体不写进数据库，
+        // 让它当场 400，而不是变成一条永远显示乱码的记录。
+        if (body.contains('\uFFFD')) {
+            throw BadRequest("请求体编码错误：内容不是合法的 UTF-8")
+        }
+        return try {
+            if (body.isBlank()) JSONObject() else JSONObject(body)
+        } catch (_: Exception) {
+            throw BadRequest("请求体不是合法 JSON")
+        }
     }
 
     private fun stringList(arr: JSONArray?): List<String> {
