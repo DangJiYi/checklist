@@ -163,10 +163,39 @@
     });
   }
 
-  function loadMonth(y, m) {
-    return req('GET', '/api/calendar/' + y + '/' + m).then(function (r) {
+  function loadMonth(y, m, quiet) {
+    return req('GET', '/api/calendar/' + y + '/' + m, null, quiet).then(function (r) {
       if (r) S.month = r;
     });
+  }
+
+  /** 某一天的实例列表（日历点开某天用）。 */
+  function loadDay(date, quiet) {
+    return req('GET', '/api/instances/date/' + date, null, quiet).then(function (r) {
+      if (r) S.dayList = r;
+    });
+  }
+
+  /** 月历圆点的指纹。今天页的侧栏只需要这一个。 */
+  function monthSig() {
+    return JSON.stringify(S.month);
+  }
+
+  /** 日历页的指纹：月历 + 选中那天的列表。 */
+  function calSig() {
+    return JSON.stringify([S.month, S.day, S.dayList]);
+  }
+
+  /**
+   * 重新拉当前月份（若已选中某天，连那天的列表一起）。
+   *
+   * quiet 给轮询用：失败不弹 toast、不写日志。
+   */
+  function refreshCal(quiet) {
+    var m = currentMonth();
+    var jobs = [loadMonth(m.year, m.month, quiet)];
+    if (S.day) jobs.push(loadDay(S.day, quiet));
+    return Promise.all(jobs);
   }
 
   function loadDetail(id) {
@@ -965,10 +994,7 @@
 
       case 'cal-day':
         S.day = date;
-        req('GET', '/api/instances/date/' + date).then(function (r) {
-          S.dayList = r || [];
-          render();
-        });
+        loadDay(date).then(render);
         break;
 
       case 'set-theme': {
@@ -1058,10 +1084,15 @@
   setInterval(function () {
     if (document.hidden || S.modal) return;
     if (S.route.name === 'today') {
-      // quiet：轮询失败不弹 toast、不写日志
-      loadToday(true).then(function () {
+      // 今天页也要刷日历：右侧/下方那本月历是同一份数据。
+      // 只看月历指纹：这一天页不显示某日的列表，把 S.day/S.dayList 也算进去只会白重绘。
+      var beforeCal = monthSig();
+      Promise.all([loadToday(true), refreshCal(true)]).then(function () {
         var nowSig = sig();
-        if (nowSig !== lastSig) { lastSig = nowSig; render(); }
+        if (nowSig !== lastSig || monthSig() !== beforeCal) {
+          lastSig = nowSig;
+          render();
+        }
       });
     } else if (S.route.name === 'detail' && S.detail) {
       req('GET', '/api/instances/' + S.detail.id, null, true).then(function (r) {
@@ -1069,6 +1100,13 @@
         var was = JSON.stringify(S.detail);
         S.detail = r;
         if (JSON.stringify(r) !== was) render();
+      });
+    } else if (S.route.name === 'cal') {
+      // 日历页：月历圆点和选中那一天的列表都要跟着变。
+      // 之前这里没有分支，所以日历必须点一下或切月份才会更新。
+      var before = calSig();
+      refreshCal(true).then(function () {
+        if (calSig() !== before) render();
       });
     } else if (S.route.name === 'settings') {
       // 设置页也要轮询。

@@ -413,6 +413,45 @@ setImmediate(async function () {
     check('设置页轮询正常', false, e.message);
   }
 
+  console.log('\n\x1b[1m日历页轮询\x1b[0m');
+  try {
+    // 切到日历页并选中某一天，模拟用户看到的状态
+    hash = '#/cal';
+    listeners.hashchange();
+    click('cal-day', { 'data-date': '2026-11-20' });
+    await new Promise(function (r) { realSetTimeout(r, 30); });
+
+    var beforeCalPoll = calls.length;
+    var origFetch4 = global.fetch;
+    global.fetch = function (url, init) {
+      if (url.indexOf('/api/calendar/') === 0) {
+        calls.push('GET ' + url);
+        // 让“另一端新建了一张表”出现：20 号应该多出一个圆点
+        return body({ year: 2026, month: 11, days: { '2026-11-20': [{ id: 9, name: '远端新建', status: 'active', completedCount: 0, totalCount: 2, locked: false }] } });
+      }
+      if (url.indexOf('/api/instances/date/') === 0) {
+        calls.push('GET ' + url);
+        return body([{ id: 9, name: '远端新建', status: 'active', completedCount: 0, totalCount: 2, locked: false }]);
+      }
+      return origFetch4(url, init);
+    };
+    intervals.forEach(function (fn) { fn(); });
+    await new Promise(function (r) { realSetTimeout(r, 40); });
+    global.fetch = origFetch4;
+
+    var polledCal = calls.slice(beforeCalPoll);
+    check('轮询会拉月历', polledCal.some(function (c) { return c.indexOf('/api/calendar/') !== -1; }),
+      '实际请求：' + polledCal.join(' | '));
+    check('轮询会拉选中那天的列表',
+      polledCal.some(function (c) { return c.indexOf('/api/instances/date/') !== -1; }),
+      '实际请求：' + polledCal.join(' | '));
+    check('日历页自动出现远端新建的表',
+      includes(elements.app.innerHTML, '远端新建'),
+      '界面里看不到新数据；这正是“必须点一下才刷新”的症状');
+  } catch (e) {
+    check('日历页轮询正常', false, e.message);
+  }
+
   console.log('\n通过 ' + pass + ' 项，失败 ' + fail + ' 项\n');
   process.exit(fail === 0 ? 0 : 1);
 });

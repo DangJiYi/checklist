@@ -13,9 +13,9 @@ android {
         applicationId = "local.checklist"
         minSdk = 26
         targetSdk = 34
-        versionCode = 9
+        versionCode = 10
         // 改版本号时同步改 AppInfo 里的常量说明（版本由 BuildConfig.VERSION_NAME 注入前端）
-        versionName = "0.1.8"
+        versionName = "0.1.9"
         // 单架构够用：WebView 是系统组件，APK 内没有原生库
     }
 
