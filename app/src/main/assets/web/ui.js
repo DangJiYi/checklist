@@ -163,7 +163,8 @@
 
   // ------------------------------------------------------------ 检查表卡片
 
-  function cardView(it) {
+  function cardView(it, opts) {
+    var inDetail = !!(opts && opts.inDetail);
     var locked = !!it.locked;
     var total = it.totalCount || 0;
     var done = it.completedCount || 0;
@@ -202,11 +203,23 @@
       ? ''
       : '<button class="btn small primary" data-act="complete" data-id="' + it.id + '">手动完成</button>';
 
+    // 今天页的卡片上就要能删。之前删除只存在于详情页，而详情页唯一的入口是日历，
+    // 于是“新建的检查表删不掉”——入口根本没接上。
+    var deleteBtn = inDetail
+      ? ''
+      : '<button class="btn small danger ghost" data-act="delete" data-id="' + it.id + '">删除</button>';
+
+    // 标题可点进详情（只读“照片”视图）。详情页里再点就是原地重载，所以关掉。
+    var head = inDetail
+      ? '<div class="sheet-head"><h2>' + esc(it.name) + '</h2>' +
+          '<span class="date">' + esc(it.localDate) + '</span></div>'
+      : '<button class="sheet-head" data-act="open" data-id="' + it.id + '" aria-label="查看详情">' +
+          '<h2>' + esc(it.name) + '</h2>' +
+          '<span class="date">' + esc(it.localDate) + ' ›</span>' +
+        '</button>';
+
     return '<article class="sheet' + (locked ? ' locked' : '') + '" data-sheet="' + it.id + '">' +
-      '<header class="sheet-head">' +
-        '<h2>' + esc(it.name) + '</h2>' +
-        '<span class="date">' + esc(it.localDate) + '</span>' +
-      '</header>' +
+      head +
       badge +
       '<ul class="items">' + listHtml + '</ul>' +
       addBtn +
@@ -215,6 +228,7 @@
         '<div class="row">' +
           '<span class="progress">完成 ' + done + '/' + total + '</span>' +
           completeBtn +
+          deleteBtn +
         '</div>' +
       '</footer>' +
       stamp +
@@ -302,7 +316,7 @@
   function detailView() {
     var it = S.detail;
     if (!it) return '<div class="sheet"><div class="empty"><p>加载中…</p></div></div>';
-    return cardView(it) +
+    return cardView(it, { inDetail: true }) +
       '<div style="display:flex;gap:10px;margin-top:16px">' +
         '<button class="btn ghost" data-act="back">返回</button>' +
         '<button class="btn danger ghost" data-act="delete" data-id="' + it.id + '" style="margin-left:auto">删除整张表</button>' +
