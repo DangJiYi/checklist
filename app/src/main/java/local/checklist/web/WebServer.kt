@@ -32,14 +32,12 @@ private class BadRequest(message: String) : RuntimeException(message)
 class WebServer(
     private val ctx: Context,
     private val repo: ChecklistRepository,
-    private val token: String,
     private val portNumber: Int
 ) : NanoHTTPD(portNumber) {
 
     companion object {
         private const val JSON_MIME = "application/json; charset=utf-8"
         private const val MAX_BODY_BYTES = 1 shl 20
-        private val LOOPBACK = setOf("127.0.0.1", "::1", "0:0:0:0:0:0:0:1", "localhost")
     }
 
     // ------------------------------------------------------------ 入口
@@ -52,8 +50,9 @@ class WebServer(
                 // 少一层解包就少一处两边对不上的可能
                 path == "/api/ping" -> json(St.OK, ping())
                 path == "/api" || path == "/api/" -> notFound("接口不存在")
-                path.startsWith("/api/") ->
-                    if (authorized(session)) api(session, path) else unauthorized()
+                // 不做鉴权：这是单机自用的局域网工具，令牌只增加摩擦，不增加安全。
+                // 真要在意同网段的人改数据，就从路由器/Wi-Fi 密码层面解决。
+                path.startsWith("/api/") -> api(session, path)
                 else -> staticFile(path)
             }
         } catch (e: BadRequest) {
@@ -63,44 +62,6 @@ class WebServer(
             json(St.INTERNAL_ERROR, errorBody("INTERNAL", e.message ?: "服务器内部错误"))
         }
     }
-
-    /**
-     * 鉴权：回环地址直通，其余来源必须带 X-List-Token。
-     * 只信 socket 对端地址，绝不解析 X-Forwarded-*（那是可伪造的）。
-     *
-     * WebView 走 127.0.0.1，本来无需令牌；前端仍然会带 header，
-     * 这样即使某些 ROM 上 remoteIp 的取值不是标准回环字面量，应用自己也不会被锁在外面。
-     */
-    private fun authorized(session: NanoHTTPD.IHTTPSession): Boolean {
-        if (isLoopback(session.remoteIpAddress)) return true
-        val given = session.headers["x-list-token"] ?: return false
-        return constantTimeEquals(given, token)
-    }
-
-    private fun isLoopback(raw: String?): Boolean {
-        val ip = raw?.trim()?.removePrefix("/") ?: return false
-        if (ip in LOOPBACK) return true
-        return ip.startsWith("127.")
-    }
-
-    private fun constantTimeEquals(a: String, b: String): Boolean {
-        if (a.length != b.length) return false
-        var diff = 0
-        for (i in a.indices) diff = diff or (a[i].code xor b[i].code)
-        return diff == 0
-    }
-
-    private fun unauthorized(): Resp = json(
-        St.UNAUTHORIZED,
-        JSONObject().apply {
-            put("ok", false)
-            put("needToken", true)
-            put("error", JSONObject().apply {
-                put("code", "UNAUTHORIZED")
-                put("message", "需要访问令牌：请在手机应用内查看")
-            })
-        }
-    )
 
     // ------------------------------------------------------------ 路由
 
@@ -229,7 +190,6 @@ class WebServer(
         put("version", AppInfo.VERSION)
         put("port", portNumber)
         put("ips", JSONArray(Net.lanIps()))
-        put("token", token)
         put("schemaVersion", repo.schemaVersion())
         put("dbBytes", repo.dbSizeBytes())
         put("deviceName", repo.readSettings()["device_name"] ?: "")
@@ -311,7 +271,7 @@ class WebServer(
 
     /** 令牌不在设置接口里暴露；需要时走 /api/status。 */
     private fun settingsJson(map: Map<String, String>): JSONObject = JSONObject().apply {
-        map.forEach { (k, v) -> if (k != "lan_token") put(k, v) }
+        map.forEach { (k, v) -> if (!k.startsWith("lan_")) put(k, v) }
         put("allowEditCompleted", map["allow_edit_completed"] == "1")
     }
 

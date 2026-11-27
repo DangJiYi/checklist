@@ -88,6 +88,11 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Frontend self-check
+        # 在 Node 里把 api.js + ui.js 真实跑一遍，断言关键入口真的渲染出来了。
+        # “点了没反应” 这类故障在真机上完全静默，在 CI 里却能当场拦住。
+        run: node tools/webcheck.js
+
       - name: Assemble debug APK
         run: |
           set -o pipefail

@@ -25,7 +25,8 @@ TOKEN="${2:-${TOKEN:-}}"
 
 # charset 必须显式写：NanoHTTPD 不带 charset 时按 US-ASCII 解码，中文会变乱码
 H=(-H "Content-Type: application/json; charset=utf-8")
-[ -n "$TOKEN" ] && H+=(-H "X-List-Token: $TOKEN")
+# 令牌已取消；保留这个参数只是为了不破坏旧用法，不再发送任何鉴权头
+[ -n "$TOKEN" ] && echo "(提示：本项目已不做鉴权，传入的令牌会被忽略)"
 
 fails=0
 pass=0

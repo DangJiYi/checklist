@@ -14,7 +14,4 @@ object ServerState {
 
     @Volatile
     var port: Int = AppInfo.PORT
-
-    @Volatile
-    var token: String? = null
 }

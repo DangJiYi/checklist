@@ -29,7 +29,25 @@ html, body {
   -webkit-text-size-adjust: 100%;
 }
 
-body { min-height: 100vh; }
+/*
+  四边发黑的成因：滚动/回弹时露出的是 html 的背景，
+  而窄屏只改了 body 的颜色，html 仍是深色底。
+  这里把两者的背景绑在一起，并禁止横向溢出——
+  横向一旦存在，右边缘就会露出一条深色。
+*/
+html {
+  background: var(--bg);
+  overflow-x: hidden;
+  overscroll-behavior: none;
+}
+
+body {
+  min-height: 100vh;
+  overflow-x: hidden;
+  overscroll-behavior-y: none;
+  /* WebView 里惯性滚动不需要额外的回弹效果 */
+  -webkit-overflow-scrolling: touch;
+}
 
 button, input, textarea { font: inherit; color: inherit; }
 
@@ -428,6 +446,24 @@ button.sheet-head:hover .date { color: var(--accent); }
 
 .day-list { margin-top: 18px; }
 
+/* 今天页底部的“已完成”分区标题 */
+.sect {
+  margin: 26px 0 10px;
+  padding-left: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-faint);
+  letter-spacing: .06em;
+}
+
+.day-item.done {
+  background: transparent;
+  border-style: dashed;
+  opacity: .95;
+}
+
+.day-item.done .t { color: var(--ink-soft); }
+
 .day-item {
   display: flex;
   align-items: center;
@@ -590,26 +626,7 @@ pre.log {
   line-height: 1.7;
 }
 
-/* ---------------------------------------------------------- 令牌 / toast */
-
-.gate {
-  max-width: 380px;
-  margin: 16vh auto 0;
-  padding: 0 20px;
-}
-
-.gate .sheet { padding: 28px 22px; }
-
-.gate input {
-  width: 100%;
-  margin: 14px 0 12px;
-  padding: 12px 14px;
-  border: 1px solid #d6cebd;
-  border-radius: 12px;
-  background: #fff;
-  letter-spacing: .18em;
-  text-align: center;
-}
+/* ---------------------------------------------------------- toast */
 
 .toast {
   position: fixed;
@@ -629,7 +646,11 @@ pre.log {
 /* ---------------------------------------------------------- 手机铺满 */
 
 @media (max-width: 899px) {
-  body { background: var(--paper); }
+  /* 两个都要改：只改 body 的话，回弹时露出 html 的深色 */
+  html, body {
+    background: var(--paper);
+    color-scheme: light;
+  }
 
   .topbar {
     background: rgba(251, 248, 241, .95);

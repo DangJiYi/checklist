@@ -14,12 +14,12 @@
     ping: null,
     status: null,
     today: [],
+    todayDone: [],
     templates: [],
     settings: {},
     month: null,
     detail: null,
     day: null,
-    gate: false,
     modal: null,
     after: null
   };
@@ -60,12 +60,7 @@
 
   function req(method, path, body) {
     return API[method](path, body).catch(function (e) {
-      if (e.code === 'NEED_TOKEN') {
-        S.gate = true;
-        render();
-      } else {
-        toast(e.message || '请求失败');
-      }
+      toast(e.message || '请求失败');
       return null;
     });
   }
@@ -73,9 +68,22 @@
   // ------------------------------------------------------------ 数据
 
   function loadToday() {
+    // 一次取两批：进行中的，以及今天已经封装的。
+    // 完成后的表会从 active 列表消失，如果不补这一批，界面会“凭空少一张”，
+    // 用户不知道是完成了还是被删了。
     return req('GET', '/api/instances/active').then(function (r) {
       if (r) S.today = r;
+      return req('GET', '/api/instances/date/' + ymd(new Date()));
+    }).then(function (r2) {
+      if (r2) {
+        S.todayDone = r2.filter(function (x) { return x.status !== 'active'; });
+      }
     });
+  }
+
+  /** 轮询与重渲染用的指纹，两批数据都要看。 */
+  function sig() {
+    return JSON.stringify([S.today, S.todayDone]);
   }
 
   function loadTemplates() {
@@ -132,10 +140,6 @@
   // ------------------------------------------------------------ 渲染
 
   function render() {
-    if (S.gate) {
-      app.innerHTML = gateView();
-      return;
-    }
     var r = S.route;
     var main = '';
     if (r.name === 'today') main = todayView();
@@ -195,9 +199,9 @@
       ? '<div class="stamp">' + esc(fmtWhen(it.completedAt)) + '<br>已完成</div>'
       : '';
 
-    var addBtn = (!locked && total === 0)
-      ? '<button class="btn ghost block" data-act="add-item" data-id="' + it.id + '">＋ 添加检查项</button>'
-      : '';
+    var addBtn = locked
+      ? ''
+      : '<button class="btn ghost block" data-act="add-item" data-id="' + it.id + '">＋ 添加检查项</button>';
 
     var completeBtn = locked
       ? ''
@@ -238,13 +242,29 @@
   // ------------------------------------------------------------ 今天
 
   function todayView() {
-    if (!S.today.length) {
+    if (!S.today.length && !S.todayDone.length) {
       return '<div class="sheet"><div class="empty">' +
         '<p>还没有进行中的检查表</p>' +
         '<button class="btn primary" data-act="new">新建检查表</button>' +
         '</div></div>';
     }
-    return S.today.map(function (it) { return cardView(it); }).join('') +
+
+    var html = S.today.map(function (it) { return cardView(it); }).join('');
+
+    // 今天已完成的那几张也要留在这里。
+    // 否则一勾完最后一项，卡片就从“今天”消失，看起来像数据丢了。
+    if (S.todayDone.length) {
+      html += '<h3 class="sect">今天已完成 ' + S.todayDone.length + ' 张</h3>' +
+        S.todayDone.map(function (d) {
+          var label = d.status === 'completed_full' ? '全部完成' : '部分完成';
+          return '<button class="day-item done" data-act="open" data-id="' + d.id + '">' +
+            '<span class="t">' + esc(d.name) + '</span>' +
+            '<span class="s">' + label + ' ' + d.completedCount + '/' + d.totalCount + '</span>' +
+          '</button>';
+        }).join('');
+    }
+
+    return html +
       '<button class="btn ghost block" data-act="new" style="margin-top:18px">＋ 新建检查表</button>';
   }
 
@@ -340,7 +360,6 @@
     var info = S.status || {};
     var ips = (S.ping && S.ping.ips) || [];
     var port = (S.ping && S.ping.port) || 8787;
-    var token = API.token() || info.token || '（启动后显示）';
     var addr = ips.length
       ? ips.map(function (ip) { return 'http://' + ip + ':' + port; }).join('\n')
       : '未检测到局域网地址，请确认已连接 Wi-Fi。';
@@ -361,8 +380,6 @@
         '<h2 style="margin:0 0 8px;font-size:17px">在电脑上打开</h2>' +
         '<p class="hint">手机与电脑连同一个 Wi-Fi，浏览器输入下面任一地址。</p>' +
         '<div class="addr">' + esc(addr) + '</div>' +
-        '<p class="hint">首次访问需要令牌：</p>' +
-        '<div class="addr">' + esc(token) + '</div>' +
         '<p class="hint">' +
           '• 路由器开了「AP 隔离」时电脑访问不到手机，这是网络策略问题。<br>' +
           '• 熄屏后仍要保持 Wi-Fi，应用已申请 WifiLock，但部分系统仍会省电杀进程，建议在系统设置里允许后台运行。<br>' +
@@ -381,23 +398,13 @@
         '<p class="hint">版本 ' + esc((S.ping && S.ping.version) || '—') +
           ' · 端口 ' + port +
           ' · 数据库 ' + Math.round(((info.dbBytes || 0) / 1024)) + ' KB</p>' +
-        '<p class="hint">备份：在电脑上执行（把 IP 和令牌换成上面的值）</p>' +
-        '<pre class="log">curl -H "X-List-Token: ' + esc(token) + '" \\\n  http://' +
+        '<p class="hint">备份：导出全部数据为 JSON，可导到电脑上保存。</p>' +
+        '<button class="btn block" data-act="export">导出全部数据</button>' +
+        '<p class="hint">也可以在电脑上直接取：</p>' +
+        '<pre class="log">curl http://' +
           esc(ips[0] || '手机IP') + ':' + port + '/api/export &gt; backup.json</pre>' +
         (log ? '<pre class="log">' + esc(log) + '</pre>' : '') +
       '</div>';
-  }
-
-  // ------------------------------------------------------------ 令牌门
-
-  function gateView() {
-    var t = API.token();
-    return '<div class="gate"><div class="sheet">' +
-      '<h2 style="margin:0;font-size:18px">需要访问令牌</h2>' +
-      '<p class="hint">令牌在手机应用里：打开应用 → 设置 → 「在电脑上打开」。输入一次之后本浏览器会记住。</p>' +
-      '<input type="text" id="gate-token" autocomplete="off" spellcheck="false" placeholder="xxxx-xxxx" value="' + esc(t) + '">' +
-      '<button class="btn primary block" data-act="save-token">继续</button>' +
-    '</div></div>';
   }
 
   // ------------------------------------------------------------ 弹层
@@ -501,8 +508,20 @@
       if (S.today[k].id === inst.id) { i = k; break; }
     }
     if (i >= 0) S.today[i] = inst;
+
+    // 刚变成完成态的那一张要从“进行中”移到“今天已完成”，
+    // 否则它会卡在 active 列表里，直到下一次轮询才消失。
+    if (inst.status !== 'active') {
+      S.today = S.today.filter(function (x) { return x.id !== inst.id; });
+      var exists = false;
+      for (var k2 = 0; k2 < S.todayDone.length; k2++) {
+        if (S.todayDone[k2].id === inst.id) { S.todayDone[k2] = inst; exists = true; break; }
+      }
+      if (!exists) S.todayDone.unshift(inst);
+    }
+
     if (S.detail && S.detail.id === inst.id) S.detail = inst;
-    lastSig = JSON.stringify(S.today);
+    lastSig = sig();
     render();
   }
 
@@ -526,6 +545,24 @@
   }
 
   function doComplete(id) {
+    // 没勾满时先问一句。手动完成会把表封装，且默认不能再改，
+    // 误点一下就得到一张 0/5 的“已完成”，只能整表删掉重来。
+    var it = null;
+    for (var k = 0; k < S.today.length; k++) if (S.today[k].id === id) it = S.today[k];
+    if (it && it.completedCount < it.totalCount) {
+      askConfirm(
+        '还没全部勾完',
+        '现在完成的话，会记成 ' + it.completedCount + '/' + it.totalCount +
+          '，之后默认不能再改（可在设置里打开“允许修改已完成表”）。',
+        '就这样完成',
+        function () { sendComplete(id); }
+      );
+      return;
+    }
+    sendComplete(id);
+  }
+
+  function sendComplete(id) {
     return req('POST', '/api/instances/' + id + '/complete').then(function (r) {
       if (!r) return;
       applyInstance(r);
@@ -556,6 +593,40 @@
       '<button class="btn primary block" data-act="item-save" data-id="' + id + '">添加</button>' +
       '<button class="btn ghost block" data-act="close">取消</button>'
     );
+  }
+
+  function doExport() {
+    // 走 req 而不是直接 API.GET：令牌失效时要触发令牌输入，而不是只弹个 toast
+    return req('GET', '/api/export').then(function (data) {
+      if (!data) return;
+      var text = JSON.stringify(data, null, 2);
+      var stamp = ymd(new Date());
+
+      // WebView 里 a[download] 对 blob 不生效（没有 DownloadListener），
+      // 点了会静默什么都不做。那种“按钮看着好好的但不工作”正是我们要避免的，
+      // 所以 WebView 下改成把 JSON 摊在弹层里让人复制。
+      if (document.documentElement.getAttribute('data-env') === 'wv') {
+        openModal(
+          '<h3>导出数据</h3>' +
+          '<p>在电脑上打开本页再点导出会更方便。这里可以全选复制（' +
+            Math.round(text.length / 1024) + ' KB）。</p>' +
+          '<textarea id="export-json" readonly style="min-height:220px">' + esc(text) + '</textarea>' +
+          '<button class="btn ghost block" data-act="close">关闭</button>'
+        );
+        return;
+      }
+
+      var blob = new Blob([text], { type: 'application/json;charset=utf-8' });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = 'checklist-' + stamp + '.json';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+      toast('已导出 checklist-' + stamp + '.json');
+    });
   }
 
   function saveTemplate(idText) {
@@ -604,22 +675,14 @@
         break;
       }
 
+      case 'export': doExport(); break;
+
       case 'item-save': {
         var nameEl = document.getElementById('item-name');
         var itemName = nameEl ? nameEl.value.trim() : '';
         if (!itemName) { toast('请输入名称'); break; }
         closeModal();
         req('POST', '/api/instances/' + id + '/items', { name: itemName }).then(applyInstance);
-        break;
-      }
-
-      case 'save-token': {
-        var input = document.getElementById('gate-token');
-        var v = input ? input.value.trim() : '';
-        if (!v) { toast('请输入令牌'); return; }
-        API.setToken(v);
-        S.gate = false;
-        boot();
         break;
       }
 
@@ -724,22 +787,21 @@
     }
   });
 
-  // 回车提交令牌
+  // 回车确认：弹层里有输入框时，回车等同点"确定"
   document.addEventListener('keydown', function (ev) {
-    if (ev.key !== 'Enter') return;
-    if (!document.getElementById('gate-token')) return;
-    var btn = document.querySelector('[data-act="save-token"]');
+    if (ev.key !== 'Enter' || !S.modal) return;
+    var btn = document.querySelector('[data-act="confirm-yes"], [data-act="item-save"], [data-act="tpl-save"]');
     if (btn) btn.click();
   });
 
   // ------------------------------------------------------------ 轮询
 
   setInterval(function () {
-    if (document.hidden || S.modal || S.gate) return;
+    if (document.hidden || S.modal) return;
     if (S.route.name === 'today') {
       loadToday().then(function () {
-        var sig = JSON.stringify(S.today);
-        if (sig !== lastSig) { lastSig = sig; render(); }
+        var nowSig = sig();
+        if (nowSig !== lastSig) { lastSig = nowSig; render(); }
       });
     } else if (S.route.name === 'detail' && S.detail) {
       req('GET', '/api/instances/' + S.detail.id).then(function (r) {
@@ -768,7 +830,6 @@
   }
 
   function boot() {
-    S.gate = false;
     fetch('/api/ping', { cache: 'no-store' })
       .then(function (r) { return r.json(); })
       .then(function (p) { return (p && p.app) ? p : null; })
@@ -780,7 +841,7 @@
           var m = currentMonth();
           return loadMonth(m.year, m.month);
         }).then(function () {
-          lastSig = JSON.stringify(S.today);
+          lastSig = sig();
           S.route = parseRoute();
           render();
           if (S.route.name === 'detail' && S.route.id) {

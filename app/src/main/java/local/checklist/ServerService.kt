@@ -69,10 +69,7 @@ class ServerService : Service() {
         ServerState.lastError = null
         try {
             val repo = ChecklistRepository(Db(applicationContext))
-            val token = repo.ensureToken()
-            ServerState.token = token
-
-            val web = WebServer(applicationContext, repo, token, AppInfo.PORT)
+            val web = WebServer(applicationContext, repo, AppInfo.PORT)
             // NanoHTTPD.start(读取超时, 守护线程)；8787 绑不上会在这里抛异常
             web.start(5000, false)
 

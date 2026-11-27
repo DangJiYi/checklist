@@ -11,7 +11,6 @@ class SettingsStore {
     companion object {
         const val ALLOW_EDIT_COMPLETED = "allow_edit_completed"
         const val DEVICE_NAME = "device_name"
-        const val LAN_TOKEN = "lan_token"
 
         /** 允许通过 PUT /api/settings 修改的键。白名单，不是黑名单。 */
         val WRITABLE: Set<String> = setOf(ALLOW_EDIT_COMPLETED, DEVICE_NAME)

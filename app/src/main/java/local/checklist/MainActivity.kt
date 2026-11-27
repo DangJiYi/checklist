@@ -230,15 +230,13 @@ class MainActivity : Activity() {
     private fun currentAddressHint(): String {
         val port = ServerState.port
         val ips = Net.lanIps()
-        val token = ServerState.token ?: ""
         val lines = StringBuilder()
         if (ips.isEmpty()) {
             lines.append("电脑与手机需在同一 Wi-Fi 下。")
         } else {
             for (ip in ips) lines.append("http://").append(ip).append(":").append(port).append("\n")
         }
-        lines.append("令牌：").append(token.ifEmpty { "（启动后显示）" })
-        return lines.toString()
+        return lines.toString().trimEnd()
     }
 
     // ------------------------------------------------------------ 就绪探测
@@ -306,9 +304,8 @@ class MainActivity : Activity() {
 
     private fun openWeb(version: String) {
         val port = ServerState.port
-        val token = ServerState.token ?: ""
-        // 令牌走 hash：浏览器不会把它发给服务端，也不会写进服务端日志
-        val url = "http://127.0.0.1:$port/#k=$token&v=$version"
+        // 版本号走 hash：给前端做版本错配自检用，不参与鉴权
+        val url = "http://127.0.0.1:$port/#v=$version"
         AppLog.w("activity", "load $url")
         overlay.visibility = View.GONE
         web.visibility = View.VISIBLE

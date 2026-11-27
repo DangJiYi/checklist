@@ -4,7 +4,6 @@ import android.content.ContentValues
 import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
 import local.checklist.AppLog
-import java.security.SecureRandom
 import java.time.LocalDate
 import java.util.concurrent.Callable
 import java.util.concurrent.ExecutionException
@@ -597,28 +596,6 @@ class ChecklistRepository(private val helper: Db) {
         } else {
             db.execSQL("UPDATE instances SET locked = CASE WHEN status <> 'active' THEN 1 ELSE 0 END")
         }
-    }
-
-    // ------------------------------------------------------------ 局域网令牌
-
-    fun ensureToken(): String = write { db ->
-        val existing = settings.get(db, SettingsStore.LAN_TOKEN)
-        if (existing != null && existing.length >= 8) {
-            existing
-        } else {
-            val fresh = newToken()
-            settings.put(db, SettingsStore.LAN_TOKEN, fresh)
-            fresh
-        }
-    }
-
-    fun token(): String = read { db -> settings.get(db, SettingsStore.LAN_TOKEN) ?: "" }
-
-    private fun newToken(): String {
-        val bytes = ByteArray(4)
-        SecureRandom().nextBytes(bytes)
-        val hex = bytes.joinToString("") { "%02x".format(it.toInt() and 0xFF) }
-        return hex.substring(0, 4) + "-" + hex.substring(4, 8)
     }
 
     // ------------------------------------------------------------ 诊断
